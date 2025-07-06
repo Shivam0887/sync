@@ -1,0 +1,21 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build",
+    "start:all": "pnpm -r start",
+    "dev:all": "pnpm -r dev",
+    "dev:gateway": "pnpm --filter api-gateway-service dev",
+    "dev:user": "pnpm --filter user-service dev"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^24.0.8",
+    "typescript": "^5.8.3"
+  }
+}

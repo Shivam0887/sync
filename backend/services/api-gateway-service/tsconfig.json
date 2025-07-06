@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "references": [{ "path": "../../shared" }],
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@shared/*": ["../../shared/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "drizzle", "dist"]
+}
