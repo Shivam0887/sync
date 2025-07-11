@@ -13,6 +13,8 @@ out/
 
 drizzle
 
+.sentryclirc
+
 # Environment variables
 .env
 .env.local

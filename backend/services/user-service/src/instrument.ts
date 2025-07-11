@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/node";
 import { nodeProfilingIntegration } from "@sentry/profiling-node";
-import { env } from "@/config/env";
+import { env } from "@/config/env.js";
 
 const isProduction = env.NODE_ENV === "production";
 
@@ -40,7 +40,7 @@ Sentry.init({
   },
 
   initialScope(scope) {
-    scope.setTag("service", "api-gateway");
+    scope.setTag("service", "user");
     return scope;
   },
 });

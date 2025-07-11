@@ -2,11 +2,12 @@ import { z } from "zod";
 import { NextFunction, Request, Response } from "express";
 import { BloomFilter } from "@/lib/bloom-filter/bloom-filter.js";
 
-// import redis from "@/config/redis-db.js";
+import redis from "@/config/redis-db.js";
 
 import { db } from "@/db/index.js";
 import { usersTable } from "@/db/schema.js";
 import { eq } from "drizzle-orm";
+import { ConflictError } from "@shared/dist/error-handler/index.js";
 
 const usernameSchema = z.object({
   username: z
@@ -32,14 +33,13 @@ export const checkAvailableUsername = async (
       return;
     }
 
-    // const isUsernameExists = Boolean(
-    //   await redis.sismember("sync_username", username)
-    // );
+    const isUsernameExists = Boolean(
+      await redis.sismember("sync_username", username)
+    );
 
-    // if (isUsernameExists) {
-    //   res.status(409).json({ message: "Username already exists" });
-    //   return;
-    // }
+    if (isUsernameExists) {
+      throw new ConflictError("Username already exists");
+    }
 
     const isUserExists =
       (
@@ -50,13 +50,12 @@ export const checkAvailableUsername = async (
       ).length === 1;
 
     if (isUserExists) {
-      res.status(409).json({ message: "Username already exists" });
-      return;
+      throw new ConflictError("Username already exists");
     }
 
     next();
   } catch (error) {
-    console.log("Update username error", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.log("Check username availability error");
+    next(error);
   }
 };

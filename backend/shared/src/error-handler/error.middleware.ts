@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { JsonWebTokenError, TokenExpiredError } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import { ZodError } from "zod";
 
 import { AppError } from "./index.js";
@@ -15,6 +15,7 @@ export function errorHandler(
     return;
   }
 
+  let status = "error";
   let statusCode = 500;
   let message = "Internal server error";
   let details: unknown;
@@ -23,7 +24,10 @@ export function errorHandler(
 
   const isDevelopment = process.env.NODE_ENV === "development";
 
-  if (err instanceof TokenExpiredError || err instanceof JsonWebTokenError) {
+  if (
+    err instanceof jwt.TokenExpiredError ||
+    err instanceof jwt.JsonWebTokenError
+  ) {
     statusCode = 401;
     message = err.message;
     stack = err.stack;
@@ -39,10 +43,11 @@ export function errorHandler(
     details = err.details;
     stack = err.stack;
     code = err.code;
+    status = err.status ?? "error";
   }
 
   res.status(statusCode).json({
-    status: "error",
+    status,
     message,
     ...(code ? { code } : {}),
     ...(details && isDevelopment ? { details } : {}),

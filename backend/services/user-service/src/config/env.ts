@@ -28,6 +28,9 @@ const envSchema = z.object({
   REDIS_PORT: z.coerce.number({
     required_error: "Redis port is required",
   }),
+  SENTRY_DSN: z.string({
+    required_error: "Sentry DSN (Data Source Name) is required",
+  }),
 });
 
 const parseResult = envSchema.safeParse(process.env);

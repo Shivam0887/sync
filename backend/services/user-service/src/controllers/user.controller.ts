@@ -1,10 +1,15 @@
-// import redis from "@/config/redis-db.js";
+import redis from "@/config/redis-db.js";
 import { db } from "@/db/index.js";
 import { usersTable } from "@/db/schema.js";
+import { NotFoundError } from "@shared/dist/error-handler/index.js";
 import { DrizzleError, eq } from "drizzle-orm";
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 
-export const userProfile = async (req: Request, res: Response) => {
+export const userProfile = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const user = await db
       .select()
@@ -12,10 +17,7 @@ export const userProfile = async (req: Request, res: Response) => {
       .where(eq(usersTable.id, (req as any).user.id));
 
     if (user.length === 0) {
-      res.status(404).json({
-        error: "User not found",
-      });
-      return;
+      throw new NotFoundError("User not found");
     }
 
     res.status(200).json({
@@ -26,14 +28,16 @@ export const userProfile = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Profile fetch error:", error);
-    res.status(500).json({
-      error: "Internal server error while fetching profile",
-    });
+    console.error("Profile fetch error");
+    next(error);
   }
 };
 
-export const updateUsername = async (req: Request, res: Response) => {
+export const updateUsername = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const user = await db
       .select({ id: usersTable.id })
@@ -41,10 +45,7 @@ export const updateUsername = async (req: Request, res: Response) => {
       .where(eq(usersTable.id, (req as any).user.id));
 
     if (user.length === 0) {
-      res.status(404).json({
-        error: "User not found",
-      });
-      return;
+      throw new NotFoundError("User not found");
     }
 
     const { username } = req.body as { username: string };
@@ -54,22 +55,18 @@ export const updateUsername = async (req: Request, res: Response) => {
       .set({ username })
       .where(eq(usersTable.id, user[0].id));
 
-    // await redis.sadd("username", username);
+    await redis.sadd("username", username);
 
     res.status(200).json({
       message: "Username updated",
     });
   } catch (error) {
-    console.error("Username error:", error);
+    console.error("Username error");
 
     if (error instanceof DrizzleError) {
-      res.status(400).json({
-        error: error.message,
-      });
+      console.log("Drizzle ORM error");
     }
 
-    res.status(500).json({
-      error: "Internal server error while updating username",
-    });
+    next(error);
   }
 };

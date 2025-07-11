@@ -3,14 +3,20 @@
   "references": [{ "path": "../../shared" }],
   "compilerOptions": {
     "composite": true,
-    "declaration": true,
     "outDir": "dist",
     "rootDir": "src",
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@shared/*": ["../../shared/src/*"]
-    }
+      "@shared/*": ["../../shared/*"]
+    },
+    // Allow JS files to be imported from TS and vice versa
+    "allowJs": true,
+    // Use correct ESM import behavior
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "inlineSources": true,
+    "sourceRoot": "/"
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "drizzle", "dist"]

@@ -1,5 +1,3 @@
-// backend/user-service/src/routes/auth.route.ts
-
 import { Router } from "express";
 import {
   signup,

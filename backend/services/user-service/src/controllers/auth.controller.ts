@@ -1,7 +1,5 @@
-// backend/user-service/src/controllers/auth.controller.ts
-
 import { z, ZodError } from "zod";
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 
 import { emailSchema, passwordSchema } from "@/lib/zod-schema.js";
 
@@ -13,7 +11,13 @@ import argon2 from "argon2";
 import jwt from "jsonwebtoken";
 import { nanoid } from "nanoid";
 import { env } from "@/config/env.js";
-// import redis from "@/config/redis-db.js";
+import redis from "@/config/redis-db.js";
+import {
+  AuthError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "@shared/dist/error-handler/index.js";
 
 const signupSchema = z.object({
   email: emailSchema,
@@ -64,15 +68,16 @@ const generateTokens = (payload: { id: string; email: string }) => {
 };
 
 // Called when access token expired
-export const refreshToken = async (req: Request, res: Response) => {
+export const refreshToken = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const { refreshToken } = req.body;
 
     if (!refreshToken) {
-      res.status(401).json({
-        error: "Refresh token required",
-      });
-      return;
+      throw new AuthError("Refresh token required");
     }
 
     const decoded = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET, {
@@ -87,17 +92,11 @@ export const refreshToken = async (req: Request, res: Response) => {
       .where(eq(usersTable.id, decoded.id));
 
     if (user.length === 0) {
-      res.status(401).json({
-        error: "User not found",
-      });
-      return;
+      throw new NotFoundError("User not found");
     }
 
     if (decoded.type !== "refresh_token") {
-      res.status(401).json({
-        error: "Unauthorized or invalid refresh token",
-      });
-      return;
+      throw new AuthError("Unauthorized or invalid refresh token");
     }
 
     // Generate new access token
@@ -105,26 +104,16 @@ export const refreshToken = async (req: Request, res: Response) => {
 
     res.status(200).json(tokens);
   } catch (error) {
-    if (error instanceof Error) {
-      if (error.name === "TokenExpiredError") {
-        res.status(401).json({
-          error: "Refresh token expired",
-        });
-      } else if (error.name === "JsonWebTokenError") {
-        res.status(401).json({
-          error: "Invalid refresh token",
-        });
-      }
-    } else {
-      console.error("Token refresh error:", error);
-      res.status(500).json({
-        error: "Internal server error during token refresh",
-      });
-    }
+    console.log("Refresh token error");
+    next(error);
   }
 };
 
-export const signup = async (req: Request, res: Response) => {
+export const signup = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const { email, password, confirmPassword } = signupSchema.parse(req.body);
 
@@ -134,18 +123,17 @@ export const signup = async (req: Request, res: Response) => {
           .select({ id: usersTable.id })
           .from(usersTable)
           .where(eq(usersTable.email, email))
-      ).length > 0;
+      ).length === 1;
 
     if (isUserExists) {
-      res.status(409).json({ message: "User with this email already exists" });
-      return;
+      throw new ConflictError("User with this email already exists");
     }
 
     if (password !== confirmPassword) {
-      res
-        .status(400)
-        .json({ message: "Password & confirm-password didn't matched" });
-      return;
+      throw new ValidationError(
+        "Password & confirm-password didn't matched",
+        "message"
+      );
     }
 
     const hashedPassword = await argon2.hash(password);
@@ -170,23 +158,16 @@ export const signup = async (req: Request, res: Response) => {
 
     res.status(201).json({ ...tokens, user: { ...payload, username: email } });
   } catch (error) {
-    console.error("Signup error:", error);
-
-    if (error instanceof ZodError) {
-      const errorMsg = error.errors.map(({ message }) => message).join(", ");
-      res.status(500).json({
-        error: errorMsg,
-      });
-      return;
-    }
-
-    res.status(500).json({
-      error: "Internal server error during signup",
-    });
+    console.error("Signup error");
+    next(error);
   }
 };
 
-export const signin = async (req: Request, res: Response) => {
+export const signin = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const { email, password } = signinSchema.parse(req.body);
 
@@ -197,10 +178,7 @@ export const signin = async (req: Request, res: Response) => {
       .where(eq(usersTable.email, email));
 
     if (users.length === 0) {
-      res.status(401).json({
-        error: "Invalid credentials",
-      });
-      return;
+      throw new AuthError("Invalid credentials");
     }
 
     // Check if account is locked
@@ -224,11 +202,7 @@ export const signin = async (req: Request, res: Response) => {
 
     if (!isValidPassword) {
       // handleFailedLogin(user);
-      res.status(401).json({
-        error: "Invalid credentials",
-      });
-
-      return;
+      throw new AuthError("Invalid credentials");
     }
 
     // Successful login
@@ -246,39 +220,30 @@ export const signin = async (req: Request, res: Response) => {
       ...tokens,
     });
   } catch (error) {
-    if (error instanceof ZodError) {
-      const errorMsg = error.errors
-        .map(({ message, path }) => `${path}: ${message}\n`)
-        .join("");
-      console.log(errorMsg);
-      res.status(500).json({
-        error: errorMsg,
-      });
-    } else {
-      res.status(500).json({
-        error: "Internal server error during signin",
-      });
-    }
+    console.log("Signin error");
+    next(error);
   }
 };
 
-export const logout = async (req: Request, res: Response) => {
+export const logout = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.split(" ")[1];
 
     // Add token to blacklist
-    // if (token) {
-    //   redis.sadd("token-blacklist", token);
-    // }
+    if (token) {
+      redis.sadd("token-blacklist", token);
+    }
 
     res.json({
       message: "Logged out successfully",
     });
   } catch (error) {
-    console.error("Logout error:", error);
-    res.status(500).json({
-      error: "Internal server error during logout",
-    });
+    console.error("Logout error");
+    next(error);
   }
 };

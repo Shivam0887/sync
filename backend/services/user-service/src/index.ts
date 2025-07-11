@@ -1,16 +1,18 @@
-// backend/user-service/src/index.ts
+import "./instrument.js";
 
+import * as Sentry from "@sentry/node";
 import { env } from "@/config/env.js";
 
-import express, { NextFunction, Response, type Request } from "express";
+import express from "express";
 import cors from "cors";
 import router from "./routes/index.js";
+import { errorHandler } from "@shared/dist/error-handler/error.middleware.js";
 
 const app = express();
 
 app.use(
   cors({
-    origin: "*",
+    origin: [env.CORS_ORIGIN],
     allowedHeaders: ["x-forwarded-user", "authorization", "content-type"],
   }),
   express.json(),
@@ -33,11 +35,9 @@ app.use(
   router
 );
 
-app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
-  if (err instanceof Error) {
-    console.log("Error:", err.message, err.name);
-  }
-});
+Sentry.setupExpressErrorHandler(app);
+
+app.use(errorHandler);
 
 app.listen(env.PORT, () => {
   console.log(`User service is running at http://localhost:${env.PORT}`);

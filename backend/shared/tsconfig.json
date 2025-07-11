@@ -4,11 +4,11 @@
     "outDir": "dist",
     "rootDir": "src",
     "composite": true,
-    "declaration": true,
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/*"]
+      "@/*": ["src/*"]
     }
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist"]
 }

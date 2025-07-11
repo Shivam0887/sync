@@ -1,8 +1,9 @@
 import { env } from "@/config/env.js";
 
 import { verify, type JwtPayload } from "jsonwebtoken";
-import { format, transports, createLogger } from "winston";
 import { createProxyMiddleware } from "http-proxy-middleware";
+
+import * as Sentry from "@sentry/node";
 
 import { services } from "@/lib/constants";
 
@@ -12,7 +13,7 @@ import {
   AuthError,
   ServiceUnavailableError,
   ValidationError,
-} from "@shared/error-handler";
+} from "@shared/dist/error-handler";
 import redis from "@/config/redis-db";
 
 const ACCESS_TOKEN_SECRET = env.ACCESS_TOKEN_SECRET;
@@ -23,11 +24,6 @@ const publicEndpoints = [
   "/api/auth/signin",
   "/api/auth/refresh-token",
 ];
-
-const logger = createLogger({
-  format: format.combine(format.splat(), format.simple()),
-  transports: [new transports.Console()],
-});
 
 export const authenticateToken = async (
   req: Request,
@@ -115,12 +111,22 @@ export const httpReverseProxy = (
           `[ProxyError] ${req.method} ${req.originalUrl}:`,
           err.message
         );
+
+        Sentry.withScope((scope) => {
+          scope.setContext("service", {
+            serviceName,
+            targetUrl: service.url,
+            mountPath,
+          });
+
+          Sentry.captureException(err);
+        });
+
         (res as Response).status(503).json({
           status: "error",
           message: "Service temporarily unavailable",
         });
       },
     },
-    logger,
   });
 };
