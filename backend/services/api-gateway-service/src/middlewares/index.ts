@@ -1,7 +1,7 @@
 import { env } from "@/config/env.js";
 
 import { verify, type JwtPayload } from "jsonwebtoken";
-import { createProxyMiddleware } from "http-proxy-middleware";
+import { createProxyMiddleware, Options } from "http-proxy-middleware";
 
 import * as Sentry from "@sentry/node";
 
@@ -96,7 +96,8 @@ export const serviceAvailability = (
 
 export const httpReverseProxy = (
   serviceName: ServiceName,
-  mountPath: string
+  mountPath: string,
+  options?: Options<Request, Response>
 ): RequestHandler => {
   const service = services[serviceName];
 
@@ -128,5 +129,6 @@ export const httpReverseProxy = (
         });
       },
     },
+    ...options,
   });
 };

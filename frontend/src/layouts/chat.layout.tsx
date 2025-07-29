@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useIsMobile } from "@/hooks/use-mobile";
 import useThrottle from "@/hooks/use-throttle";
 
 import ChatSidebar from "@/components/chat/chat-sidebar";
 import Chat from "@/components/chat/chat";
+import FindFriends from "@/components/chat/find-friends";
+import { Outlet } from "react-router";
 
 const MIN_WIDTH = 260;
 const WIDTH = 320;
@@ -14,7 +16,7 @@ const ChatLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(WIDTH);
 
-  const [chatId, setChatId] = useState<string | null>(null);
+  const [findFriendsOpen, setFindFriendsOpen] = useState(false);
 
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<HTMLDivElement | null>(null);
@@ -58,18 +60,23 @@ const ChatLayout = () => {
     };
   }, [throlledHandleMove]);
 
-  const toggleSidebar = () => {
+  const toggleSidebar = useCallback(() => {
     setSidebarOpen(!sidebarOpen);
-  };
+  }, []);
 
   const handleMouseDown = () => {
     dragging.current = true;
     document.body.style.cursor = "col-resize";
   };
 
-  const onChatIdChange = useCallback((id: string) => {
-    setChatId(id);
-  }, []);
+  const outletContext = useMemo(
+    () => ({
+      sidebarOpen,
+      toggleSidebar,
+      onFindFriends: () => setFindFriendsOpen(true),
+    }),
+    [sidebarOpen, toggleSidebar, setFindFriendsOpen]
+  );
 
   return (
     <div className="relative h-full w-full flex">
@@ -84,7 +91,7 @@ const ChatLayout = () => {
           !sidebarOpen ? "-translate-x-full absolute" : "translate-x-0"
         }`}
       >
-        <ChatSidebar onChatIdChange={onChatIdChange} />
+        <ChatSidebar onFindFriends={() => setFindFriendsOpen(true)} />
 
         <div
           ref={handleRef}
@@ -94,12 +101,12 @@ const ChatLayout = () => {
         />
       </div>
       <div className="flex-1 p-3">
-        <Chat
-          sidebarOpen={sidebarOpen}
-          toggleSidebar={toggleSidebar}
-          chatId={chatId}
-        />
+        <Outlet context={outletContext} />
       </div>
+      <FindFriends
+        open={findFriendsOpen}
+        onClose={() => setFindFriendsOpen(false)}
+      />
     </div>
   );
 };

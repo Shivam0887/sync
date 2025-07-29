@@ -1,3 +1,5 @@
+import { RateLimitOptions } from "@/types/index.js";
+
 // Base application error class
 export class AppError extends Error {
   public status?: string;
@@ -86,6 +88,17 @@ export class ConflictError extends AppError {
     details?: unknown
   ) {
     super(message, 409, true, details, "CONFLICT_ERROR", status);
+  }
+}
+
+// Rate limit error
+export class RateLimitError extends AppError {
+  constructor(
+    message = "Too many requests. Please try again after some time.",
+    details?: unknown,
+    status?: string
+  ) {
+    super(message, 429, true, details, "TOO_MANY_REQUEST_ERROR", status);
   }
 }
 

@@ -8,4 +8,10 @@ export const services: Service = {
     retries: 3,
     healthCheck: "http://localhost:8001/api/health",
   },
+  chat: {
+    url: "http://localhost:8002/api",
+    timeout: 5000,
+    retries: 3,
+    healthCheck: "http://localhost:8002/api/health",
+  },
 };

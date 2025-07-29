@@ -1,6 +1,6 @@
-import { CircuitBreaker } from "@/lib/utils";
+import { CircuitBreaker } from "@/lib/circuit-breaker";
 
-export type ServiceName = "user";
+export type ServiceName = "user" | "chat";
 
 interface ServiceConfig {
   url: string;

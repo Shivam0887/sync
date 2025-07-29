@@ -1,7 +1,7 @@
 import { z, ZodError } from "zod";
 import { NextFunction, Request, Response } from "express";
 
-import { emailSchema, passwordSchema } from "@/lib/zod-schema.js";
+import { emailSchema, passwordSchema } from "@/lib/schema/zod-schema.js";
 
 import { eq } from "drizzle-orm";
 import { db } from "@/db/index.js";

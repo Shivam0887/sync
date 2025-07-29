@@ -9,7 +9,8 @@
     "start:all": "pnpm -r start",
     "dev:all": "pnpm -r dev",
     "dev:gateway": "pnpm --filter api-gateway-service dev",
-    "dev:user": "pnpm --filter user-service dev"
+    "dev:user": "pnpm --filter user-service dev",
+    "dev:chat": "pnpm --filter chat-service dev"
   },
   "keywords": [],
   "author": "",

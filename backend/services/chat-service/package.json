@@ -1,0 +1,33 @@
+{
+  "name": "chat-service",
+  "version": "1.0.0",
+  "description": "Chat service that establish and manage WS connections",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --watch src/index.ts",
+    "build": "pnpm i && tsc && tsc-alias",
+    "start": "node ./dist/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "drizzle-orm": "^0.44.2",
+    "express": "^5.1.0",
+    "ioredis": "^5.6.1",
+    "kafkajs": "^2.2.4",
+    "nanoid": "^5.1.5",
+    "postgres": "^3.4.7",
+    "socket.io": "^4.8.1",
+    "zod": "^4.0.10"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.1.0",
+    "drizzle-kit": "^0.31.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

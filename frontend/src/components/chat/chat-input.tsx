@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Smile, Paperclip, Image, Mic, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useChat } from "@/providers/chat-provider";
 
 const MAX_ROWS = 5;
 
-const ChatInput = () => {
+interface ChatInputProps {
+  chatId: string;
+  userId: string;
+  id: string;
+}
+
+const ChatInput = ({ chatId, userId, id }: ChatInputProps) => {
   const [message, setMessage] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [textareaClientHeight, setTextareaClientHeight] = useState(0); // Initial textarea client height
+
+  const { sendMessage } = useChat();
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -18,7 +27,7 @@ const ChatInput = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim()) {
-      console.log("Message sent:", message);
+      sendMessage(chatId, message, userId, id);
       setMessage("");
     }
   };

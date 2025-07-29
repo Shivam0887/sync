@@ -18,6 +18,6 @@
     "inlineSources": true,
     "sourceRoot": "/"
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "../drizzle.config.ts"],
   "exclude": ["node_modules", "drizzle", "dist"]
 }

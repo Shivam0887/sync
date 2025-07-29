@@ -6,8 +6,10 @@ import redis from "@/config/redis-db.js";
 
 import { db } from "@/db/index.js";
 import { usersTable } from "@/db/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { ConflictError } from "@shared/dist/error-handler/index.js";
+import { PrefixTree } from "@/lib/prefix-search/index.js";
+import { nanoid } from "nanoid";
 
 const usernameSchema = z.object({
   username: z
@@ -58,4 +60,33 @@ export const checkAvailableUsername = async (
     console.log("Check username availability error");
     next(error);
   }
+};
+
+export const searchUsername = (searchUsernamePrefix: PrefixTree) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { username } = usernameSchema.parse(req.params);
+      const prefixResult = searchUsernamePrefix.searchPrefix(username);
+
+      if (prefixResult.length) {
+        res.json({
+          users: prefixResult,
+        });
+        return;
+      }
+
+      const dbResult = await db
+        .select({ id: usersTable.id, username: usersTable.username })
+        .from(usersTable)
+        .where(like(usersTable.username, `${username}%`))
+        .limit(10);
+
+      res.json({
+        users: dbResult,
+      });
+      return;
+    } catch (error) {
+      next(error);
+    }
+  };
 };

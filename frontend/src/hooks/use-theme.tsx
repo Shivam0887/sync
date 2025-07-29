@@ -1,12 +1,13 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
   type PropsWithChildren,
 } from "react";
 
-type Theme = "light" | "dark";
+export type Theme = "light" | "dark" | "system";
 
 interface ThemeState {
   theme: Theme;
@@ -28,25 +29,30 @@ export const useTheme = () => {
 };
 
 export const ThemeProvider = ({ children }: PropsWithChildren) => {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const [theme, setTheme] = useState<Theme>("light");
 
-  useEffect(() => {
-    const isDarkPrefers =
-      localStorage.getItem("theme") !== null
-        ? localStorage.getItem("theme")!
-        : matchMedia("(prefers-color-scheme:dark)").matches
+  const onThemeChange = useCallback((newTheme: Theme) => {
+    let preferredTheme = newTheme;
+
+    if (newTheme === "system") {
+      preferredTheme = matchMedia("(prefers-color-scheme:dark)").matches
         ? "dark"
         : "light";
+    }
 
-    document.documentElement.classList.toggle("dark", isDarkPrefers === "dark");
-    setTheme(isDarkPrefers as Theme);
-  }, []);
+    document.documentElement.classList.toggle(
+      "dark",
+      preferredTheme === "dark"
+    );
 
-  const onThemeChange = (newTheme: Theme) => {
-    document.documentElement.classList.toggle("dark", newTheme === "dark");
     localStorage.setItem("theme", newTheme);
     setTheme(newTheme);
-  };
+  }, []);
+
+  useEffect(() => {
+    const currentTheme = (localStorage.getItem("theme") ?? "light") as Theme;
+    onThemeChange(currentTheme);
+  }, [onThemeChange]);
 
   return (
     <ThemeContext.Provider value={{ theme, onThemeChange }}>

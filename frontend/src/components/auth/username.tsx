@@ -39,7 +39,7 @@ const Username = () => {
 
   const handleSubmit = async (values: z.infer<typeof usernameSchema>) => {
     try {
-      const response = await apiRequest("/user/update-username", {
+      const response = await apiRequest("/user/username/update", {
         method: "PATCH",
         body: JSON.stringify({ username: values.username }),
       });

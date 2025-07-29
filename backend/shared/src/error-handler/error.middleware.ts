@@ -1,8 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
+import type { RateLimitOptions } from "../types/index.js";
+
 import jwt from "jsonwebtoken";
 import { ZodError } from "zod";
 
-import { AppError } from "./index.js";
+import { AppError, RateLimitError } from "./index.js";
 
 export function errorHandler(
   err: unknown,
@@ -18,7 +20,6 @@ export function errorHandler(
   let status = "error";
   let statusCode = 500;
   let message = "Internal server error";
-  let details: unknown;
   let stack: string | undefined;
   let code: string | undefined;
 
@@ -40,7 +41,6 @@ export function errorHandler(
   } else if (err instanceof AppError && err.isOperational) {
     statusCode = err.statusCode;
     message = err.message;
-    details = err.details;
     stack = err.stack;
     code = err.code;
     status = err.status ?? "error";
@@ -49,9 +49,8 @@ export function errorHandler(
   res.status(statusCode).json({
     status,
     message,
-    ...(code ? { code } : {}),
-    ...(details && isDevelopment ? { details } : {}),
-    ...(stack && isDevelopment ? { stack } : {}),
+    ...(code && { code }),
+    ...(stack && isDevelopment && { stack }),
   });
 
   return;
