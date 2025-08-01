@@ -37,7 +37,7 @@ const FindFriends = ({
     setLoading(true);
 
     try {
-      const res = await apiRequest(`/user/username/search/${query}`);
+      const res = await apiRequest(`/user/username/${query}/search`);
       if (!res.ok)
         throw new Error("Unable to find friends. Please try again later");
 
@@ -53,7 +53,7 @@ const FindFriends = ({
   const handleUserAdd = async (friendId: string) => {
     try {
       setLoading(true);
-      const res = await apiRequest("/user/chat/direct", {
+      const res = await apiRequest("/chat/direct", {
         method: "POST",
         body: JSON.stringify({ otherUserId: friendId }),
       });

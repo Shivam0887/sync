@@ -1,4 +1,4 @@
-import { z, ZodError } from "zod";
+import { z } from "zod";
 import { NextFunction, Request, Response } from "express";
 
 import { emailSchema, passwordSchema } from "@/lib/schema/zod-schema.js";
@@ -19,8 +19,15 @@ import {
   ValidationError,
 } from "@shared/dist/error-handler/index.js";
 
+export const usernameSchema = z
+  .string()
+  .trim()
+  .min(3, { message: "Username must be at least 3 characters" })
+  .max(255, { message: "Username can't be greater than 255 characters" });
+
 const signupSchema = z.object({
   email: emailSchema,
+  username: usernameSchema,
   password: passwordSchema,
   confirmPassword: passwordSchema,
 });
@@ -115,7 +122,9 @@ export const signup = async (
   next: NextFunction
 ) => {
   try {
-    const { email, password, confirmPassword } = signupSchema.parse(req.body);
+    const { email, username, password, confirmPassword } = signupSchema.parse(
+      req.body
+    );
 
     const isUserExists =
       (
@@ -142,9 +151,9 @@ export const signup = async (
       await db
         .insert(usersTable)
         .values({
-          email,
+          email: email.toLowerCase(),
           password: hashedPassword,
-          username: email, // Will update the username on the username route
+          username: username.toLowerCase(),
         })
         .returning({ id: usersTable.id })
     )[0];
@@ -170,7 +179,6 @@ export const signin = async (
 ) => {
   try {
     const { email, password } = signinSchema.parse(req.body);
-
     // Find user
     const users = await db
       .select()

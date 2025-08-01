@@ -32,7 +32,7 @@ const Signup = ({ setAuthType }: SignupProps) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const { signup } = useAuth();
+  const { signup, apiRequest } = useAuth();
 
   const form = useForm<TSignup>({
     resolver: zodResolver(signupSchema),
@@ -40,27 +40,40 @@ const Signup = ({ setAuthType }: SignupProps) => {
       confirmPassword: "",
       email: "",
       password: "",
+      username: "",
     },
   });
 
   const handleSubmitCredentials = async (values: TSignup) => {
-    if (values.password !== values.confirmPassword) {
-      toastErrorHandler({
-        defaultErrorMsg: "Password & confirm-password didn't matched",
-      });
-      return;
-    }
-
     try {
+      const usernameRes = await apiRequest(
+        `/user/username/${values.username}/check`
+      );
+
+      const data = await usernameRes.json();
+
+      if (!usernameRes.ok) {
+        throw new Error(
+          data?.message || data?.error || "Unable to set username"
+        );
+      }
+
+      if (values.password !== values.confirmPassword) {
+        throw new Error("Password & confirm-password didn't matched");
+      }
+
       const response = await signup(
         values.email,
+        values.username,
         values.password,
         values.confirmPassword
       );
 
-      if (response.success) {
-        toast(response.message);
+      if (!response.success) {
+        throw new Error(response.error);
       }
+
+      toast(response.message);
     } catch (error) {
       toastErrorHandler({ error });
     }
@@ -96,6 +109,32 @@ const Signup = ({ setAuthType }: SignupProps) => {
               onSubmit={form.handleSubmit(handleSubmitCredentials)}
             >
               <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel
+                        htmlFor="username"
+                        className="text-sm font-medium text-foreground"
+                      >
+                        Username
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          id="username"
+                          autoComplete="username"
+                          className="mt-1"
+                          placeholder="john123"
+                          autoFocus
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <FormField
                   control={form.control}
                   name="email"

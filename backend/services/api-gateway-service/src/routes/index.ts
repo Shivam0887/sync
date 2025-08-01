@@ -3,7 +3,6 @@ import type { ServiceMap, ServiceName } from "@/types/index.js";
 import { Router } from "express";
 import { services } from "@/lib/constants.js";
 import { CircuitBreaker } from "@/lib/circuit-breaker";
-import { rateLimiter } from "@/lib/rate-limiter";
 import { httpReverseProxy, serviceAvailability } from "@/middlewares";
 
 const router: Router = Router();
@@ -15,22 +14,15 @@ Object.keys(services).forEach((serviceName) => {
 });
 
 router.use(
-  "/auth",
+  /\/auth|\/user/,
   serviceAvailability("user", circuitBreakers["user"]),
-  rateLimiter(2, 60_000),
-  httpReverseProxy("user", "/auth")
+  httpReverseProxy("user")
 );
 
 router.use(
-  "/user",
-  serviceAvailability("user", circuitBreakers["user"]),
-  httpReverseProxy("user", "/user")
-);
-
-router.use(
-  "/chat",
+  /\/socket|\/chat/,
   serviceAvailability("chat", circuitBreakers["chat"]),
-  httpReverseProxy("chat", "/chat", { ws: true })
+  httpReverseProxy("chat", { ws: true })
 );
 
 export default router;

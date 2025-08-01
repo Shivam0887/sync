@@ -24,6 +24,11 @@ const emailSchema = z
 
 export const signupSchema = z.object({
   email: emailSchema,
+  username: z
+    .string()
+    .trim()
+    .min(3, { message: "Username must be at least 3 characters" })
+    .max(255, { message: "Username can't be greater than 255 characters" }),
   password: passwordSchema,
   confirmPassword: passwordSchema,
 });

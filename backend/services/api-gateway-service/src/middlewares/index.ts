@@ -15,14 +15,16 @@ import {
   ValidationError,
 } from "@shared/dist/error-handler";
 import redis from "@/config/redis-db";
+import { error } from "console";
 
 const ACCESS_TOKEN_SECRET = env.ACCESS_TOKEN_SECRET;
 const JWT_ISSUER = env.JWT_ISSUER;
 
 const publicEndpoints = [
-  "/api/auth/signup",
-  "/api/auth/signin",
-  "/api/auth/refresh-token",
+  /\/api\/auth\/signup/,
+  /\/api\/auth\/signin/,
+  /\/api\/auth\/refresh-token/,
+  /\/api\/user\/username\/.*\/check/,
 ];
 
 export const authenticateToken = async (
@@ -31,7 +33,7 @@ export const authenticateToken = async (
   next: NextFunction
 ) => {
   // Skip auth for public endpoints
-  if (publicEndpoints.some((endpoint) => req.path.startsWith(endpoint))) {
+  if (publicEndpoints.some((endpoint) => endpoint.test(req.path))) {
     next();
     return;
   }
@@ -96,7 +98,6 @@ export const serviceAvailability = (
 
 export const httpReverseProxy = (
   serviceName: ServiceName,
-  mountPath: string,
   options?: Options<Request, Response>
 ): RequestHandler => {
   const service = services[serviceName];
@@ -105,7 +106,7 @@ export const httpReverseProxy = (
     target: service.url,
     changeOrigin: true,
     proxyTimeout: service.timeout,
-    pathRewrite: (path) => mountPath + path,
+    pathRewrite: (path, req) => req.originalUrl,
     on: {
       error: (err, req, res) => {
         console.error(
@@ -113,19 +114,15 @@ export const httpReverseProxy = (
           err.message
         );
 
+        console.error(error);
         Sentry.withScope((scope) => {
           scope.setContext("service", {
             serviceName,
             targetUrl: service.url,
-            mountPath,
+            originalUrl: req.originalUrl,
           });
 
           Sentry.captureException(err);
-        });
-
-        (res as Response).status(503).json({
-          status: "error",
-          message: "Service temporarily unavailable",
         });
       },
     },

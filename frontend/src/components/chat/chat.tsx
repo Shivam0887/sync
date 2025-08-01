@@ -20,8 +20,7 @@ const Chat = () => {
   const { conversation } = useChat();
   const userId = useAuth().user?.id;
 
-  const { onFindFriends, sidebarOpen, toggleSidebar } =
-    useOutletContext<IOutletContext>();
+  const { onFindFriends, toggleSidebar } = useOutletContext<IOutletContext>();
 
   if (!userId) {
     toastErrorHandler({ defaultErrorMsg: "Not authenticated" });

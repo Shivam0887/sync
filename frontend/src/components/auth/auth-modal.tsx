@@ -1,5 +1,4 @@
 import { useAuth } from "@/providers/auth-provider";
-import { lazy, useState, Suspense } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,19 +7,11 @@ import {
   DialogDescription,
 } from "../ui/dialog";
 
-import type { AuthType } from "@/types/auth.types";
-import Loader from "../loader";
-
-const Signup = lazy(() => import("./signup"));
-const Signin = lazy(() => import("./signin"));
-const Username = lazy(() => import("./username"));
+import Signup from "./signup";
+import Signin from "./signin";
 
 const AuthModal = () => {
-  const [authType, setAuthType] = useState<AuthType>("signup");
-  const { authModalOpen, setAuthModalOpen, isAuthenticated, needsUsername } =
-    useAuth();
-
-  const isRegistered = isAuthenticated && needsUsername;
+  const { authModalOpen, setAuthModalOpen, authType, setAuthType } = useAuth();
 
   return (
     <Dialog open={authModalOpen} onOpenChange={setAuthModalOpen}>
@@ -29,19 +20,13 @@ const AuthModal = () => {
         <DialogDescription />
       </DialogHeader>
       <DialogContent className="p-0 overflow-y-auto min-h-60">
-        <Suspense fallback={<Loader />}>
-          {isRegistered ? (
-            <Username />
+        <>
+          {authType === "signup" ? (
+            <Signup setAuthType={setAuthType} />
           ) : (
-            <>
-              {authType === "signup" ? (
-                <Signup setAuthType={setAuthType} />
-              ) : (
-                <Signin setAuthType={setAuthType} />
-              )}
-            </>
+            <Signin setAuthType={setAuthType} />
           )}
-        </Suspense>
+        </>
       </DialogContent>
     </Dialog>
   );

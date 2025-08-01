@@ -4,7 +4,6 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import useThrottle from "@/hooks/use-throttle";
 
 import ChatSidebar from "@/components/chat/chat-sidebar";
-import Chat from "@/components/chat/chat";
 import FindFriends from "@/components/chat/find-friends";
 import { Outlet } from "react-router";
 

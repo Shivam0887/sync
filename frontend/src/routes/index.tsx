@@ -33,7 +33,7 @@ export const router = createBrowserRouter([
         ),
         children: [
           {
-            path: ":chatId",
+            path: ":chatId?",
             element: (
               <Suspense fallback={<Loader />}>
                 <Chat />

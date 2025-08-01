@@ -7,7 +7,6 @@ import express from "express";
 import cors from "cors";
 import router from "./routes/index.js";
 import { errorHandler } from "@shared/dist/error-handler/error.middleware.js";
-import { AuthError } from "@shared/src/error-handler/index.js";
 
 const app = express();
 
@@ -27,22 +26,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.use(
-  "/api",
-  (req, res, next) => {
-    try {
-      const decoded = req.headers["x-forwarded-user"];
-      if (!decoded) throw new AuthError();
-
-      (req as any).user = JSON.parse(decoded as string);
-
-      next();
-    } catch (error) {
-      next(error);
-    }
-  },
-  router
-);
+app.use("/api", router);
 
 Sentry.setupExpressErrorHandler(app);
 

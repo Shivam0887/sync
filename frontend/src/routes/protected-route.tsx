@@ -2,16 +2,15 @@ import { useAuth } from "@/providers/auth-provider";
 import { useEffect } from "react";
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, loading, setAuthModalOpen, needsUsername } =
-    useAuth();
+  const { isAuthenticated, loading, setAuthModalOpen } = useAuth();
 
   useEffect(() => {
-    if (!isAuthenticated || (isAuthenticated && needsUsername)) {
+    if (!isAuthenticated && !loading) {
       setAuthModalOpen(true);
     }
-  }, [isAuthenticated, loading, setAuthModalOpen, needsUsername]);
+  }, [isAuthenticated, loading, setAuthModalOpen]);
 
-  return !isAuthenticated || needsUsername ? null : children;
+  return !isAuthenticated ? null : children;
 };
 
 export default ProtectedRoute;

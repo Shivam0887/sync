@@ -20,6 +20,7 @@ import { socket } from "@/lib/socket";
 import { toastErrorHandler } from "@/lib/utils";
 import { useAuth } from "./auth-provider";
 import { nanoid } from "nanoid";
+import type { Socket } from "socket.io-client";
 
 const initialState: ChatState = {
   conversation: {},
@@ -38,7 +39,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         return result;
       }, {} as ChatState["conversation"]);
 
-      return { ...state, ...conversations };
+      return { ...state, conversation: { ...conversations } };
     case "SET_CHAT":
       return {
         ...state,
@@ -91,7 +92,7 @@ const ChatProvider = ({ children }: React.PropsWithChildren) => {
     });
 
     try {
-      const res = await apiRequest("/user/conversations");
+      const res = await apiRequest("/chat/conversations");
 
       if (!res.ok) throw new Error("Failed to fetch conversations");
 
@@ -115,7 +116,7 @@ const ChatProvider = ({ children }: React.PropsWithChildren) => {
         payload: { loadType: "messages", isLoading: true },
       });
       try {
-        const res = await apiRequest(`/user/chat/${chatId}/messages`);
+        const res = await apiRequest(`/chat/${chatId}/messages`);
         if (!res.ok) throw new Error("Failed to fetch messages");
         const data = await res.json();
         dispatch({
@@ -174,21 +175,28 @@ const ChatProvider = ({ children }: React.PropsWithChildren) => {
   }, []);
 
   useEffect(() => {
+    (async () => {
+      await fetchConversations();
+    })();
+
+    socket.connect();
+
     const onConnect = () => {
       setSocketConnectionStatus("connected");
     };
 
-    const onDisconnect = () => {
+    const onDisconnect = (reason: Socket.DisconnectReason) => {
       setSocketConnectionStatus("disconnected");
+      console.log(reason);
     };
 
     const onReconnecting = () => {
       setSocketConnectionStatus("reconnecting");
     };
 
-    const onConnectError = () => {
+    const onConnectError = (err: Error) => {
       setSocketConnectionStatus("disconnected");
-      toastErrorHandler({ error: "Unable to connect to the server" });
+      toastErrorHandler({ error: err });
     };
 
     const handleReceiveMessage = (chatId: string, message: Message) => {
@@ -205,6 +213,8 @@ const ChatProvider = ({ children }: React.PropsWithChildren) => {
     socket.on("receive_message", handleReceiveMessage);
 
     return () => {
+      socket.disconnect();
+
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
       socket.off("connect_error", onConnectError);

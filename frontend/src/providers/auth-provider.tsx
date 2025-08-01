@@ -4,6 +4,7 @@ import type {
   AuthAction,
   AuthResponseStatus,
   AuthState,
+  AuthType,
 } from "@/types/auth.types";
 import {
   createContext,
@@ -16,7 +17,7 @@ import {
   useState,
 } from "react";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) + "/api";
 
 const initialState: AuthState = {
   user: null,
@@ -49,6 +50,8 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
 
 const authContextState: Auth = {
   user: null,
+  authType: "signup",
+  setAuthType: () => {},
   loading: false,
   isAuthenticated: false,
   signup: async () => ({ success: false, error: "" }),
@@ -58,8 +61,6 @@ const authContextState: Auth = {
   apiRequest: async () => new Response(null, { status: 500 }),
   authModalOpen: false,
   setAuthModalOpen: () => {},
-  needsUsername: false,
-  onSignUpSuccess: () => {},
 };
 
 const AuthContext = createContext<Auth>(authContextState);
@@ -67,7 +68,7 @@ const AuthContext = createContext<Auth>(authContextState);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  const [needsUsername, setNeedsUsername] = useState(false);
+  const [authType, setAuthType] = useState<AuthType>("signup");
   const accessTokenRef = useRef<string | null>(null);
   const refreshTokenRef = useRef<string | null>(null);
 
@@ -142,7 +143,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const signin = useCallback(
     async (email: string, password: string): Promise<AuthResponseStatus> => {
       try {
-        const response = await fetch(`${API_BASE_URL}/auth/signin`, {
+        const response = await apiRequest("/auth/signin", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -177,16 +178,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const signup = useCallback(
     async (
       email: string,
+      username: string,
       password: string,
       confirmPassword: string
     ): Promise<AuthResponseStatus> => {
       try {
-        const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+        const response = await apiRequest("/auth/signup", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ email, password, confirmPassword }),
+          body: JSON.stringify({ email, username, password, confirmPassword }),
         });
 
         const data = await response.json();
@@ -204,7 +206,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         dispatch({ type: "SET_USER", payload: data.user });
         setAuthModalOpen(false);
-        setNeedsUsername(true);
 
         return { success: true, message: "Account created successfully!" };
       } catch (error) {
@@ -238,15 +239,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     [apiRequest]
   );
 
-  const onSignUpSuccess = useCallback((username: string) => {
-    setNeedsUsername(false);
-    dispatch({ type: "UPDATE_USERNAME", payload: username });
-    localStorage.setItem("needsUsername", "false");
-  }, []);
-
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
+        dispatch({ type: "SET_LOADING", payload: true });
         const response = await apiRequest("/user/profile", { method: "GET" });
 
         if (!response.ok) {
@@ -271,19 +267,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         accessTokenRef.current = storedAccessToken;
         refreshTokenRef.current = storedRefreshToken;
         await fetchUserProfile();
-      } else {
-        dispatch({ type: "SET_LOADING", payload: false });
       }
     };
 
     initializeAuth();
-    setNeedsUsername(localStorage.getItem("needsUsername") === "true");
   }, [apiRequest]);
 
   const contextValue = useMemo(
     () => ({
       user: state.user,
       loading: state.loading,
+      authType,
+      setAuthType,
       isAuthenticated: !!state.user,
       signin,
       signup,
@@ -292,10 +287,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       apiRequest,
       authModalOpen: state.authModalOpen,
       setAuthModalOpen,
-      needsUsername,
-      onSignUpSuccess,
     }),
     [
+      authType,
+      setAuthType,
       state.user,
       state.loading,
       state.authModalOpen,
@@ -305,8 +300,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       changePassword,
       apiRequest,
       setAuthModalOpen,
-      needsUsername,
-      onSignUpSuccess,
     ]
   );
 

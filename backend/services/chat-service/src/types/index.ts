@@ -7,9 +7,9 @@ export interface IMessage {
 }
 
 export interface ServerToClientEvents {
-  send_message: (chatId: string, message: IMessage) => void;
+  receive_message: (chatId: string, message: IMessage) => void;
 }
 
 export interface ClientToServerEvents {
-  receive_message: (chatId: string, message: IMessage) => void;
+  send_message: (chatId: string, message: IMessage) => void;
 }

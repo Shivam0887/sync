@@ -1,5 +1,3 @@
-import { RateLimitOptions } from "@/types/index.js";
-
 // Base application error class
 export class AppError extends Error {
   public status?: string;

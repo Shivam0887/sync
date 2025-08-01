@@ -1,6 +1,6 @@
 import { Eye, EyeOff, Lock } from "lucide-react";
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -31,7 +31,6 @@ const Signin = ({ setAuthType }: SigninProps) => {
   const { signin } = useAuth();
 
   const navigate = useNavigate();
-  const location = useLocation();
 
   const form = useForm<TSignin>({
     resolver: zodResolver(signinSchema),
@@ -46,8 +45,7 @@ const Signin = ({ setAuthType }: SigninProps) => {
       const response = await signin(values.email, values.password);
       if (response.success) {
         toast(response.message);
-        const from = location.state?.from?.pathname || "/chat";
-        navigate(from);
+        navigate("/chat");
       }
     } catch (error) {
       toastErrorHandler({ error });
@@ -101,6 +99,7 @@ const Signin = ({ setAuthType }: SigninProps) => {
                           autoComplete="email"
                           className="mt-1 text-sm"
                           placeholder="demo@example.com"
+                          autoFocus
                           {...field}
                         />
                       </FormControl>

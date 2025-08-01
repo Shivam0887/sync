@@ -12,11 +12,14 @@ export type User = {
 
 export type Auth = {
   user: User;
+  authType: AuthType;
+  setAuthType: React.Dispatch<React.SetStateAction<AuthType>>;
   loading: boolean;
   isAuthenticated: boolean;
   signin: (email: string, password: string) => Promise<AuthResponseStatus>;
   signup: (
     email: string,
+    username: string,
     password: string,
     confirmPassword: string
   ) => Promise<AuthResponseStatus>;
@@ -28,8 +31,6 @@ export type Auth = {
   apiRequest: (url: string, options?: RequestInit) => Promise<Response>;
   authModalOpen: boolean;
   setAuthModalOpen: (isOpen: boolean) => void;
-  needsUsername: boolean;
-  onSignUpSuccess: (username: string) => void;
 };
 
 export type AuthState = {

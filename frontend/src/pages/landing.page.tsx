@@ -1,15 +1,14 @@
-import { MessageCircle, ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import ToggleTheme from "@/components/toggle-theme";
 
 import { useNavigate } from "react-router";
 import { useAuth } from "@/providers/auth-provider";
 import { useEffect } from "react";
+import Navbar from "@/components/navbar";
 
 export default function ChatHeroSection() {
   const navigate = useNavigate();
-  const { setAuthModalOpen, isAuthenticated, loading, user, needsUsername } =
-    useAuth();
+  const { setAuthModalOpen, isAuthenticated, loading } = useAuth();
 
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
@@ -39,23 +38,7 @@ export default function ChatHeroSection() {
     <div className="h-full flex flex-col bg-background relative overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-br from-muted/50 to-accent/10 bg-no-repeat"></div>
 
-      <header className="relative z-10 flex items-center justify-between p-6 lg:px-8 backdrop-blur-sm">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/25">
-            <MessageCircle className="w-6 h-6 text-primary-foreground" />
-          </div>
-          <div className="text-foreground">
-            <div className="font-bold text-lg">Sync</div>
-            <div className="text-xs text-muted-foreground -mt-1">
-              Connect • Collaborate • Create
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <ToggleTheme />
-          {user && <span>{user.username}</span>}
-        </div>
-      </header>
+      <Navbar />
 
       <main className="transition-transform relative flex-1 z-10 flex flex-col items-center justify-center gap-4 px-6 text-center">
         <div
@@ -99,10 +82,7 @@ export default function ChatHeroSection() {
         >
           <Button
             onClick={() => {
-              if (
-                (!isAuthenticated && !loading) ||
-                (isAuthenticated && needsUsername)
-              ) {
+              if (!isAuthenticated && !loading) {
                 setAuthModalOpen(true);
               } else {
                 navigate("/chat");

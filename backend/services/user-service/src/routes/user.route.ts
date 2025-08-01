@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Request, Response, Router } from "express";
 import { updateUsername, userProfile } from "@/controllers/user.controller.js";
 import {
   checkAvailableUsername,
@@ -31,11 +31,18 @@ const searchUsernamePrefix = new PrefixTree();
 userRouter.get("/profile", userProfile);
 
 userRouter.get(
-  "/username/search/:username",
+  "/username/:username/search",
   searchUsername(searchUsernamePrefix)
 );
+userRouter.get(
+  "/username/:username/check",
+  checkAvailableUsername,
+  (req: Request, res: Response) => {
+    res.json({ message: "Username available" })
+  }
+);
 userRouter.patch(
-  "/username/update",
+  "/username/:username/update",
   checkAvailableUsername,
   updateUsername(searchUsernamePrefix)
 );

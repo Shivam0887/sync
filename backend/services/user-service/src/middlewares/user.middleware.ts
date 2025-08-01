@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { NextFunction, Request, Response } from "express";
 import { BloomFilter } from "@/lib/bloom-filter/bloom-filter.js";
 
@@ -9,15 +8,7 @@ import { usersTable } from "@/db/schema.js";
 import { eq, like } from "drizzle-orm";
 import { ConflictError } from "@shared/dist/error-handler/index.js";
 import { PrefixTree } from "@/lib/prefix-search/index.js";
-import { nanoid } from "nanoid";
-
-const usernameSchema = z.object({
-  username: z
-    .string()
-    .trim()
-    .min(3, { message: "Username must be at least 3 characters" })
-    .max(255, { message: "Username can't be greater than 255 characters" }),
-});
+import { usernameSchema } from "@/controllers/auth.controller.js";
 
 const bloomFilter = new BloomFilter(1000);
 
@@ -27,7 +18,7 @@ export const checkAvailableUsername = async (
   next: NextFunction
 ) => {
   try {
-    const { username } = usernameSchema.parse(req.body);
+    const username = usernameSchema.parse(req.params?.username).toLowerCase();
 
     if (!bloomFilter.has(username)) {
       bloomFilter.add(username);
@@ -65,7 +56,7 @@ export const checkAvailableUsername = async (
 export const searchUsername = (searchUsernamePrefix: PrefixTree) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { username } = usernameSchema.parse(req.params);
+      const username = usernameSchema.parse(req.params?.username).toLowerCase();
       const prefixResult = searchUsernamePrefix.searchPrefix(username);
 
       if (prefixResult.length) {

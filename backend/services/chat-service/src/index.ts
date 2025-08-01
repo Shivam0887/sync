@@ -7,6 +7,7 @@ import { env } from "./config/env.js";
 
 import express from "express";
 import router from "./routes/index.js";
+import cors from "cors";
 
 import { createServer } from "http";
 import { Server } from "socket.io";
@@ -18,14 +19,30 @@ import { errorHandler } from "@shared/dist/error-handler/error.middleware.js";
 const app = express();
 const httpServer = createServer(app);
 
-const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer);
+const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
+  cors: {
+    origin: [env.CORS_ORIGIN],
+  },
+  path: "/api/socket",
+  addTrailingSlash: false,
+});
 
-io.on("connect", (socket) => {
-  socket.on("receive_message", (chatId, message) => {
+io.on("connection", (socket) => {
+  socket.on("send_message", (chatId, message) => {
     const msg = { ...message, id: nanoid() };
-    socket.broadcast.emit("send_message", chatId, msg);
+    console.log({ msg });
+    socket.broadcast.emit("receive_message", chatId, msg);
   });
 });
+
+app.use(
+  cors({
+    origin: [env.CORS_ORIGIN],
+    allowedHeaders: ["x-forwarded-user", "authorization", "content-type"],
+  }),
+  express.json(),
+  express.urlencoded({ extended: false })
+);
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({

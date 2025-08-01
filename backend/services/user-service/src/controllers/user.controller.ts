@@ -5,6 +5,7 @@ import { PrefixTree } from "@/lib/prefix-search/index.js";
 import { NotFoundError } from "@shared/dist/error-handler/index.js";
 import { DrizzleError, eq } from "drizzle-orm";
 import { NextFunction, Request, Response } from "express";
+import { usernameSchema } from "./auth.controller.js";
 
 export const userProfile = async (
   req: Request,
@@ -46,11 +47,11 @@ export const updateUsername = (searchUsernamePrefix: PrefixTree) => {
         throw new NotFoundError("User not found");
       }
 
-      const { username } = req.body as { username: string };
+      const username = usernameSchema.parse(req.params?.username).toLowerCase();
 
       await db
         .update(usersTable)
-        .set({ username })
+        .set({ username: username })
         .where(eq(usersTable.id, user[0].id));
 
       await redis.sadd("sync_username", username);
@@ -61,11 +62,6 @@ export const updateUsername = (searchUsernamePrefix: PrefixTree) => {
       });
     } catch (error) {
       console.error("Username error");
-
-      if (error instanceof DrizzleError) {
-        console.log("Drizzle ORM error");
-      }
-
       next(error);
     }
   };
