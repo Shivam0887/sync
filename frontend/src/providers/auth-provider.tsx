@@ -21,7 +21,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) + "/api";
 
 const initialState: AuthState = {
   user: null,
-  loading: true,
+  loading: false,
   authModalOpen: false,
 };
 
@@ -241,9 +241,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const fetchUserProfile = async () => {
+      dispatch({ type: "SET_LOADING", payload: true });
+
       try {
-        dispatch({ type: "SET_LOADING", payload: true });
-        const response = await apiRequest("/user/profile", { method: "GET" });
+        const response = await apiRequest("/user/profile");
 
         if (!response.ok) {
           throw new Error("Token validation failed");

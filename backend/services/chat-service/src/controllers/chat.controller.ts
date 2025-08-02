@@ -4,13 +4,27 @@ import {
   chatParticipantsTable,
   messagesTable,
   usersTable,
+  groupInviteLinksTable,
 } from "@/db/schema.js";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { Request, Response, NextFunction } from "express";
 import {
   NotFoundError,
   ConflictError,
+  ValidationError,
+  AuthorizationError,
 } from "@shared/dist/error-handler/index.js";
+import { randomBytes } from "crypto";
+import z from "zod";
+
+const groupSchema = z.object({
+  name: z
+    .string()
+    .min(3, { error: "Group name must contain at least 3 charaters" })
+    .max(50, { error: "Group name can't greater than 50 charaters" }),
+  userIds: z.array(z.string()),
+  description: z.string().nullable(),
+});
 
 // Fetch all conversations for a user
 export const getConversations = async (
@@ -27,6 +41,8 @@ export const getConversations = async (
         chatId: chatsTable.id,
         chatType: chatsTable.type,
         chatName: chatsTable.name,
+        groupAvatarUrl: chatsTable.avatarUrl,
+        chatDescription: chatsTable.description,
         // Get latest message using window function
         latestMessage: sql<{ content: string; createdAt: Date } | null>`
           (SELECT json_build_object(
@@ -63,6 +79,7 @@ export const getConversations = async (
     const participantsQuery = db
       .select({
         chatId: chatParticipantsTable.chatId,
+        role: chatParticipantsTable.role,
         userId: usersTable.id,
         username: usersTable.username,
         avatarUrl: usersTable.avatarUrl,
@@ -78,13 +95,29 @@ export const getConversations = async (
       if (!acc[participant.chatId]) {
         acc[participant.chatId] = [];
       }
+
       acc[participant.chatId].push({
         id: participant.userId,
         username: participant.username,
         avatarUrl: participant.avatarUrl,
+        role: participant.role,
       });
       return acc;
-    }, {} as Record<string, Array<{ id: string; username: string; avatarUrl: string | null }>>);
+    }, {} as Record<string, Array<{ id: string; username: string; avatarUrl: string | null; role: string }>>);
+
+    // Group invite link
+    const inviteLinks = (
+      await db
+        .select({
+          groupInviteLinkToken: groupInviteLinksTable.token,
+          chatId: groupInviteLinksTable.chatId,
+        })
+        .from(groupInviteLinksTable)
+        .where(inArray(groupInviteLinksTable.chatId, chatIds))
+    ).reduce((result, { chatId, groupInviteLinkToken }) => {
+      result[chatId] = groupInviteLinkToken;
+      return result;
+    }, {} as Record<string, string>);
 
     // Combine the data efficiently
     const result = conversations
@@ -92,6 +125,11 @@ export const getConversations = async (
         id: conv.chatId,
         type: conv.chatType,
         name: conv.chatName,
+        inviteLink: inviteLinks[conv.chatId]
+          ? `/groups/join/${inviteLinks[conv.chatId]}`
+          : null,
+        avatarUrl: conv.groupAvatarUrl,
+        description: conv.chatDescription,
         participants: participantsByChat[conv.chatId] || [],
         unread: conv.unreadCount,
         lastMessage: conv.latestMessage?.content || "",
@@ -238,6 +276,186 @@ export const sendMessage = async (
       .returning();
 
     res.json({ message });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createGroup = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).user.id;
+    const { name, description, userIds } = groupSchema.parse(req.body);
+
+    // Create group chat
+    const [chat] = await db
+      .insert(chatsTable)
+      .values({
+        type: "group",
+        name,
+        description,
+        createdBy: userId,
+      })
+      .returning();
+
+    // Add creator as admin, others as members
+    const participants = [
+      { chatId: chat.id, userId, role: "admin" },
+      ...userIds
+        .filter((id: string) => id !== userId)
+        .map((id: string) => ({
+          chatId: chat.id,
+          userId: id,
+          role: "member",
+        })),
+    ];
+
+    await db.insert(chatParticipantsTable).values(participants);
+
+    // Generate a unique token
+    const token = randomBytes(32).toString("hex");
+
+    // Store invite link
+    await db.insert(groupInviteLinksTable).values({
+      chatId: chat.id,
+      token,
+      createdBy: userId,
+    });
+
+    res
+      .status(201)
+      .json({ groupId: chat.id, inviteLink: `/groups/join/${token}` });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const addGroupMembers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).user.id;
+    const { groupId } = req.params;
+    const { userIds } = groupSchema.pick({ userIds: true }).parse(req.body);
+
+    // Check if user is admin of the group
+    const admin = await db
+      .select()
+      .from(chatParticipantsTable)
+      .where(
+        and(
+          eq(chatParticipantsTable.chatId, groupId),
+          eq(chatParticipantsTable.userId, userId),
+          eq(chatParticipantsTable.role, "admin")
+        )
+      );
+
+    if (!admin.length) {
+      throw new AuthorizationError("Only admins can add members");
+    }
+
+    // Add users as members
+    const newMembers = userIds.map((id: string) => ({
+      chatId: groupId,
+      userId: id,
+      role: "member",
+    }));
+
+    await db.insert(chatParticipantsTable).values(newMembers);
+
+    res.status(200).json({ added: userIds });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const regenerateInviteLink = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).user.id;
+    const { groupId } = req.params;
+
+    // Check if user is a participant
+    const participant = await db
+      .select()
+      .from(chatParticipantsTable)
+      .where(
+        and(
+          eq(chatParticipantsTable.chatId, groupId),
+          eq(chatParticipantsTable.userId, userId),
+          eq(chatParticipantsTable.role, "admin")
+        )
+      );
+
+    if (!participant.length) {
+      throw new AuthorizationError("Only admins can regenerate invite link");
+    }
+
+    // Generate a unique token
+    const token = randomBytes(32).toString("hex");
+
+    // Store invite link
+    await db
+      .update(groupInviteLinksTable)
+      .set({ token })
+      .where(eq(groupInviteLinksTable.chatId, groupId));
+
+    res.status(201).json({ inviteLink: `/groups/join/${token}` });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const joinViaInviteLink = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = (req as any).user.id;
+    const { inviteToken } = req.params;
+
+    const invite = await db
+      .select()
+      .from(groupInviteLinksTable)
+      .where(eq(groupInviteLinksTable.token, inviteToken));
+
+    if (!invite.length) {
+      throw new NotFoundError("Invalid invite link");
+    }
+
+    const groupId = invite[0].chatId;
+
+    // Check if already a participant
+    const existing = await db
+      .select()
+      .from(chatParticipantsTable)
+      .where(
+        and(
+          eq(chatParticipantsTable.chatId, groupId),
+          eq(chatParticipantsTable.userId, userId)
+        )
+      );
+
+    if (existing.length) {
+      throw new ConflictError("Already a group member");
+    }
+
+    await db.insert(chatParticipantsTable).values({
+      chatId: groupId,
+      userId,
+      role: "member",
+    });
+
+    res.status(200).json({ groupId });
   } catch (error) {
     next(error);
   }

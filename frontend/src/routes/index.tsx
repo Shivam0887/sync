@@ -11,6 +11,7 @@ import ChatProvider from "@/providers/chat-provider";
 
 const ChatLayout = lazy(() => import("@/layouts/chat.layout"));
 const Chat = lazy(() => import("@/components/chat/chat"));
+const JoinGroupPage = lazy(() => import("@/pages/join-group.page"));
 
 export const router = createBrowserRouter([
   {
@@ -41,6 +42,14 @@ export const router = createBrowserRouter([
             ),
           },
         ],
+      },
+      {
+        path: "groups/join/:inviteToken",
+        element: (
+          <Suspense fallback={<Loader />}>
+            <JoinGroupPage />
+          </Suspense>
+        ),
       },
     ],
   },

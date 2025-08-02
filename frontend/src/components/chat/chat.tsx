@@ -48,29 +48,34 @@ const Chat = () => {
     );
   }
 
-  const otherUserData =
+  if (!conversation[chatId]) return null;
+
+  const receiverId =
     conversation[chatId].type === "direct"
       ? conversation[chatId].participants[0].id !== userId
-        ? conversation[chatId].participants[0]
-        : conversation[chatId].participants[1]
-      : {
-          avatarUrl: conversation[chatId].avatarUrl,
-          id: conversation[chatId].id,
-          username: conversation[chatId].name,
-        };
+        ? conversation[chatId].participants[0].id
+        : conversation[chatId].participants[1].id
+      : null;
 
   return (
-    <div className="h-full w-full overflow-hidden">
-      <div className="flex flex-col flex-1 h-full w-full gap-y-3">
-        <ChatHeader toggleSidebar={toggleSidebar} {...otherUserData} />
+    <div className="h-full w-full overflow-hidden pl-1 pr-2">
+      <div className="flex flex-col flex-1 h-full w-full gap-y-2">
+        <ChatHeader
+          userId={userId}
+          toggleSidebar={toggleSidebar}
+          conversationData={conversation[chatId]}
+        />
 
         <div className="flex-1 overflow-hidden rounded-xl relative shadow border">
-          <div className="absolute inset-0 backdrop-blur-xl bg-secondary/50 -z-10 rounded-xl border border-border/5" />
-
           <ChatMessages chatId={chatId} userId={userId} />
         </div>
 
-        <ChatInput chatId={chatId} userId={userId} id={otherUserData.id} />
+        <ChatInput
+          chatId={chatId}
+          userId={userId}
+          conversationType={conversation[chatId].type}
+          receiverId={receiverId}
+        />
       </div>
     </div>
   );

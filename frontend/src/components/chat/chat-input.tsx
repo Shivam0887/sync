@@ -8,10 +8,16 @@ const MAX_ROWS = 5;
 interface ChatInputProps {
   chatId: string;
   userId: string;
-  id: string;
+  receiverId: string | null;
+  conversationType: "direct" | "group";
 }
 
-const ChatInput = ({ chatId, userId, id }: ChatInputProps) => {
+const ChatInput = ({
+  chatId,
+  userId,
+  receiverId,
+  conversationType,
+}: ChatInputProps) => {
   const [message, setMessage] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [textareaClientHeight, setTextareaClientHeight] = useState(0); // Initial textarea client height
@@ -27,7 +33,13 @@ const ChatInput = ({ chatId, userId, id }: ChatInputProps) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim()) {
-      sendMessage(chatId, message, userId, id);
+      sendMessage({
+        chatId,
+        content: message,
+        senderId: userId,
+        receiverId,
+        conversationType,
+      });
       setMessage("");
     }
   };

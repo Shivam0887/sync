@@ -88,7 +88,13 @@ const ChatMessage = ({
   );
 };
 
-const ChatMessages = ({ chatId, userId }: { chatId: string, userId: string }) => {
+const ChatMessages = ({
+  chatId,
+  userId,
+}: {
+  chatId: string;
+  userId: string;
+}) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { chat: messages, isChatMessagesLoading, conversation } = useChat();
@@ -119,7 +125,7 @@ const ChatMessages = ({ chatId, userId }: { chatId: string, userId: string }) =>
     );
 
   return (
-    <div className="h-full w-full overflow-y-auto p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+    <div className="h-full w-full bg-secondary/50 overflow-y-auto p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
       {isChatMessagesLoading ? (
         <ChatMessagesSkeleton />
       ) : (

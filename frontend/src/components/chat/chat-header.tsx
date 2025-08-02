@@ -1,18 +1,52 @@
+import type { Conversation } from "@/types/chat.types";
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Menu, Search, Phone, Video, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { ProfileInfo } from "./profile-info";
+import { GroupInfo } from "./group-info";
 
 type ChatHeaderProps = {
   toggleSidebar: () => void;
-  username: string;
-  avatarUrl: string;
+  conversationData: Conversation;
+  userId: string;
 };
 
 const ChatHeader = ({
   toggleSidebar,
-  avatarUrl,
-  username,
+  userId,
+  conversationData,
 }: ChatHeaderProps) => {
+  const [openProfile, setOpenProfile] = useState(false);
+
+  let avatarUrl = "";
+  let name = "";
+
+  let otherUser: {
+    id: string;
+    username: string;
+    avatarUrl: string | null;
+    role: "admin" | "member";
+  } | null = null;
+
+  if (conversationData.type === "direct") {
+    otherUser =
+      conversationData.participants[0].id !== userId
+        ? conversationData.participants[0]
+        : conversationData.participants[1];
+
+    avatarUrl = otherUser.avatarUrl ?? "";
+    name = otherUser.username;
+  } else {
+    avatarUrl = conversationData.avatarUrl ?? "";
+    name = conversationData.name;
+  }
+
+  const handleProfileClick = () => {
+    setOpenProfile(!openProfile);
+  };
+
   return (
     <header className="border px-4 py-3 rounded-xl relative overflow-hidden flex items-center justify-between shadow">
       {/* Background layers */}
@@ -30,19 +64,22 @@ const ChatHeader = ({
           <Menu size={18} />
           <span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full bg-chat-primary animate-pulse"></span>
         </Button>
-        <div className="flex items-center">
+        <div
+          className="flex items-center cursor-pointer"
+          onClick={handleProfileClick}
+        >
           <div className="relative">
             <Avatar className="h-9 w-9 border border-white/10 ring-2 ring-[#7F5AF0]/20">
               <AvatarImage src={avatarUrl} />
               <AvatarFallback>
-                {username[0].toUpperCase() + username[1].toUpperCase()}
+                {name[0].toUpperCase() + name[1].toUpperCase()}
               </AvatarFallback>
             </Avatar>
             <span className="absolute -bottom-0.5 -right-0.4 h-3 w-3 rounded-full ring-2 ring-ring"></span>
           </div>
           <div className="ml-3 hidden sm:block">
             <div className="font-medium text-secondary-foreground capitalize">
-              {username}
+              {name}
             </div>
             <div className="text-xs text-muted-foreground flex items-center">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-chat-green mr-1.5 animate-glow-pulse"></span>
@@ -53,6 +90,7 @@ const ChatHeader = ({
       </div>
 
       <div className="flex items-center space-x-1">
+        {/* Search within chats */}
         <Button
           variant="ghost"
           size="icon"
@@ -61,6 +99,8 @@ const ChatHeader = ({
           <Search size={18} />
           <span className="absolute inset-0 rounded-lg bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></span>
         </Button>
+
+        {/* Voice call button */}
         <Button
           variant="ghost"
           size="icon"
@@ -69,6 +109,8 @@ const ChatHeader = ({
           <Phone size={18} />
           <span className="absolute inset-0 rounded-lg bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></span>
         </Button>
+
+        {/* Video call button */}
         <Button
           variant="ghost"
           size="icon"
@@ -77,6 +119,8 @@ const ChatHeader = ({
           <Video size={18} />
           <span className="absolute inset-0 rounded-lg bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></span>
         </Button>
+
+        {/* More options */}
         <Button
           variant="ghost"
           size="icon"
@@ -86,6 +130,20 @@ const ChatHeader = ({
           <span className="absolute inset-0 rounded-lg bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"></span>
         </Button>
       </div>
+
+      {conversationData.type === "direct" ? (
+        <ProfileInfo
+          onClose={handleProfileClick}
+          user={otherUser!}
+          open={openProfile}
+        />
+      ) : (
+        <GroupInfo
+          onClose={handleProfileClick}
+          group={conversationData}
+          open={openProfile}
+        />
+      )}
     </header>
   );
 };

@@ -42,6 +42,7 @@ export const chatsTable = pgTable("chats", {
   type: chatTypeEnum().default("direct").notNull(), // 'direct' or 'group'
   name: varchar({ length: 255 }), // Optional chat name for group chats
   description: text(), // Optional description for group chats
+  avatarUrl: varchar({ length: 500 }), // Avatar url for group chat
   createdBy: uuid().references(() => usersTable.id), // Who created the chat
   createdAt: timestamp().defaultNow().notNull(),
   updatedAt: timestamp().defaultNow().notNull(),
@@ -58,7 +59,7 @@ export const chatParticipantsTable = pgTable(
       .references(() => usersTable.id, { onDelete: "cascade" }),
     joinedAt: timestamp().defaultNow().notNull(),
     leftAt: timestamp(), // Track when user left (for group chats)
-    role: varchar({ length: 20 }).default("member"), // 'admin', 'member', etc.
+    role: varchar({ length: 20 }).default("member").notNull(), // 'admin', 'member', etc.
   },
   (t) => [
     primaryKey({ columns: [t.chatId, t.userId] }),
@@ -99,4 +100,20 @@ export const messagesTable = pgTable(
     // Index for unread message counts
     index("idx_messages_status").on(t.status),
   ]
+);
+
+export const groupInviteLinksTable = pgTable(
+  "group_invite_links",
+  {
+    chatId: uuid()
+      .notNull()
+      .references(() => chatsTable.id, { onDelete: "cascade" }),
+    token: varchar({ length: 64 }).notNull().unique(),
+    createdBy: uuid()
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    createdAt: timestamp().defaultNow().notNull(),
+    expiresAt: timestamp(), // Optional: set to null for non-expiring links
+  },
+  (t) => [index("idx_group_invite_links_chat_id_token").on(t.chatId, t.token)]
 );

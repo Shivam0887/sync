@@ -6,14 +6,21 @@ import useThrottle from "@/hooks/use-throttle";
 import ChatSidebar from "@/components/chat/chat-sidebar";
 import FindFriends from "@/components/chat/find-friends";
 import { Outlet } from "react-router";
+import { useChat } from "@/providers/chat-provider";
+import { useAuth } from "@/providers/auth-provider";
+import type { IConversationBase } from "@/types/chat.types";
 
 const MIN_WIDTH = 260;
 const WIDTH = 320;
 const MAX_WIDTH = 380;
 
+export type IUser = IConversationBase["participants"];
+
 const ChatLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(WIDTH);
+
+  const [allUsers, setAllUsers] = useState<IUser>([]);
 
   const [findFriendsOpen, setFindFriendsOpen] = useState(false);
 
@@ -22,6 +29,12 @@ const ChatLayout = () => {
   const dragging = useRef(false);
 
   const isMobile = useIsMobile();
+
+  const { user } = useAuth();
+  const { conversation } = useChat();
+
+  const userId = useMemo(() => user!.id, [user!.id]);
+  const userConversations = useMemo(() => conversation, [conversation]);
 
   const handleMouseMove = (evt: MouseEvent) => {
     evt.stopPropagation();
@@ -59,8 +72,24 @@ const ChatLayout = () => {
     };
   }, [throlledHandleMove]);
 
+  useEffect(() => {
+    if (!userConversations) return;
+    // Extract and set users from conversation state
+    const participants = Object.entries(userConversations).reduce(
+      (result, [_, c]) => {
+        if (c.type === "direct") {
+          result.push({ ...c.participants.filter((u) => u.id !== userId)[0] });
+        }
+        return result;
+      },
+      [] as IUser
+    );
+
+    setAllUsers(participants);
+  }, [userId, userConversations]);
+
   const toggleSidebar = useCallback(() => {
-    setSidebarOpen(!sidebarOpen);
+    setSidebarOpen((prev) => !prev);
   }, []);
 
   const handleMouseDown = () => {
@@ -71,10 +100,11 @@ const ChatLayout = () => {
   const outletContext = useMemo(
     () => ({
       sidebarOpen,
+      allUsers,
       toggleSidebar,
       onFindFriends: () => setFindFriendsOpen(true),
     }),
-    [sidebarOpen, toggleSidebar, setFindFriendsOpen]
+    [sidebarOpen, allUsers, toggleSidebar, setFindFriendsOpen]
   );
 
   return (
@@ -90,7 +120,10 @@ const ChatLayout = () => {
           !sidebarOpen ? "-translate-x-full absolute" : "translate-x-0"
         }`}
       >
-        <ChatSidebar onFindFriends={() => setFindFriendsOpen(true)} />
+        <ChatSidebar
+          onFindFriends={() => setFindFriendsOpen(true)}
+          allUsers={allUsers}
+        />
 
         <div
           ref={handleRef}
@@ -99,7 +132,7 @@ const ChatLayout = () => {
           onDoubleClick={() => setSidebarWidth(WIDTH)}
         />
       </div>
-      <div className="flex-1 p-3">
+      <div className="h-full flex-1">
         <Outlet context={outletContext} />
       </div>
       <FindFriends

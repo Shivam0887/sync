@@ -1,7 +1,8 @@
 import type {
   ChatAction,
   ChatContextType,
-  ChatState,
+  IChatState,
+  ISendMsgArgs,
   Message,
   SocketConnectionStatus,
 } from "@/types/chat.types";
@@ -22,7 +23,7 @@ import { useAuth } from "./auth-provider";
 import { nanoid } from "nanoid";
 import type { Socket } from "socket.io-client";
 
-const initialState: ChatState = {
+const initialState: IChatState = {
   conversation: {},
   chat: {},
   isChatMessagesLoading: false,
@@ -31,13 +32,13 @@ const initialState: ChatState = {
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
-function chatReducer(state: ChatState, action: ChatAction): ChatState {
+function chatReducer(state: IChatState, action: ChatAction): IChatState {
   switch (action.type) {
     case "SET_CONVERSATIONS":
       const conversations = action.payload.reduce((result, conversation) => {
         result[conversation.id] = conversation;
         return result;
-      }, {} as ChatState["conversation"]);
+      }, {} as IChatState["conversation"]);
 
       return { ...state, conversation: { ...conversations } };
     case "SET_CHAT":
@@ -135,30 +136,40 @@ const ChatProvider = ({ children }: React.PropsWithChildren) => {
     [apiRequest]
   );
 
-  // Send a message (creates chat if needed)
   const sendMessage = useCallback(
-    async (
-      chatId: string,
-      content: string,
-      senderId: string,
-      receiverId: string
-    ) => {
+    async ({
+      chatId,
+      content,
+      conversationType,
+      receiverId,
+      senderId,
+    }: ISendMsgArgs) => {
+      const timestamp = new Date();
+
       try {
-        const message: Message = {
+        let message: Partial<Message> = {
           content,
           id: nanoid(),
           senderId,
-          receiverId,
+          timestamp,
           status: "SENT",
-          timestamp: new Date(),
-          type: "direct",
+          type: conversationType,
         };
 
-        socket.emit("send_message", chatId, message);
+        if (message.type === "direct" && receiverId) {
+          message.receiverId = receiverId;
+        }
+
+        socket.emit("send_message", chatId, {
+          content,
+          senderId,
+          type: conversationType,
+          timestamp,
+        });
 
         dispatch({
           type: "ADD_MESSAGE",
-          payload: { chatId, message },
+          payload: { chatId, message: message as Message },
         });
         // Optionally, refetch conversations to update last message
         fetchConversations();
@@ -179,7 +190,7 @@ const ChatProvider = ({ children }: React.PropsWithChildren) => {
       await fetchConversations();
     })();
 
-    socket.connect();
+    // socket.connect();
 
     const onConnect = () => {
       setSocketConnectionStatus("connected");
@@ -213,7 +224,7 @@ const ChatProvider = ({ children }: React.PropsWithChildren) => {
     socket.on("receive_message", handleReceiveMessage);
 
     return () => {
-      socket.disconnect();
+      // socket.disconnect();
 
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);

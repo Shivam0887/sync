@@ -17,6 +17,5 @@ export const toastErrorHandler = ({
   defaultErrorMsg = "Something went wrong",
   data,
 }: IErrorHandler) => {
-  console.log(error);
   toast(error instanceof Error ? error.message : defaultErrorMsg, data);
 };

@@ -1,8 +1,10 @@
+import type { IUser } from "@/layouts/chat.layout";
+
 import { Link } from "react-router";
 import { useState } from "react";
 
 import { format } from "date-fns";
-import { Search, MessageCircle, Plus } from "lucide-react";
+import { Search, MessageCircle, UsersRound, UserRound } from "lucide-react";
 
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -12,13 +14,16 @@ import ChatSidebarSkeleton from "../skeleton-loading/chat-sidebar-skeleton";
 import Settings from "../settings";
 import { useChat } from "@/providers/chat-provider";
 import { useAuth } from "@/providers/auth-provider";
+import CreateGroupDialog from "./create-group-modal";
 
 interface ChatSidebarProps {
   onFindFriends: () => void;
+  allUsers: IUser;
 }
 
-const ChatSidebar = ({ onFindFriends }: ChatSidebarProps) => {
+const ChatSidebar = ({ onFindFriends, allUsers }: ChatSidebarProps) => {
   const [query, setQuery] = useState("");
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const { conversation, isCoversationLoading } = useChat();
   const userId = useAuth().user?.id;
 
@@ -57,15 +62,30 @@ const ChatSidebar = ({ onFindFriends }: ChatSidebarProps) => {
           <h2 className="font-medium text-xs uppercase tracking-wider text-muted-foreground">
             Messages
           </h2>
-          <Button
-            type="button"
-            onClick={onFindFriends}
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 rounded-full bg-primary/10 hover:bg-primary/20 text-primary"
-          >
-            <Plus size={14} />
-          </Button>
+
+          <div className="space-x-2">
+            {/* Create new groups */}
+            <Button
+              size="icon"
+              type="button"
+              variant="outline"
+              onClick={() => setGroupDialogOpen(true)}
+              className="h-6 w-6 rounded-full"
+            >
+              <UsersRound size={14} />
+            </Button>
+
+            {/* Find new friends */}
+            <Button
+              type="button"
+              onClick={onFindFriends}
+              variant="outline"
+              size="icon"
+              className="h-6 w-6 rounded-full"
+            >
+              <UserRound size={14} />
+            </Button>
+          </div>
         </div>
         <ul className="space-y-1">
           {isCoversationLoading ? (
@@ -88,7 +108,7 @@ const ChatSidebar = ({ onFindFriends }: ChatSidebarProps) => {
                     >
                       <div className="relative">
                         <Avatar className="h-10 w-10 border border-sidebar-border">
-                          <AvatarImage src={otherUser.avatarUrl} />
+                          <AvatarImage src={otherUser.avatarUrl ?? ""} />
                           <AvatarFallback>
                             {otherUser.username[0].toUpperCase()}
                           </AvatarFallback>
@@ -96,7 +116,7 @@ const ChatSidebar = ({ onFindFriends }: ChatSidebarProps) => {
                       </div>
                       <div className="ml-3 text-left flex-1 overflow-hidden">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm truncate text-sidebar-foreground">
+                          <span className="font-medium text-sm truncate text-sidebar-foreground capitalize">
                             {otherUser.username}
                           </span>
                           {conversation[id].timestamp && (
@@ -124,6 +144,14 @@ const ChatSidebar = ({ onFindFriends }: ChatSidebarProps) => {
           )}
         </ul>
       </div>
+
+      {groupDialogOpen && (
+        <CreateGroupDialog
+          open={groupDialogOpen}
+          onClose={() => setGroupDialogOpen(false)}
+          allUsers={allUsers}
+        />
+      )}
     </div>
   );
 };

@@ -11,11 +11,11 @@ export interface IMessageBase {
 export type Message = IMessageBase &
   (
     | {
-        receiverId: string;
-        type: "direct";
+        type: "group";
       }
     | {
-        type: "group";
+        type: "direct";
+        receiverId: string;
       }
   );
 
@@ -24,7 +24,12 @@ export interface IConversationBase {
   unread: number;
   lastMessage: string;
   timestamp: Date | null;
-  participants: { id: string; username: string; avatarUrl: string }[];
+  participants: {
+    id: string;
+    username: string;
+    avatarUrl: string | null;
+    role: "admin" | "member";
+  }[];
 }
 
 export type Conversation = IConversationBase &
@@ -35,15 +40,25 @@ export type Conversation = IConversationBase &
     | {
         type: "group";
         name: string;
-        avatarUrl: string;
+        description: string | null;
+        avatarUrl: string | null;
+        inviteLink: string | null;
       }
   );
 
-export interface ChatState {
+export interface IChatState {
   conversation: { [id: string]: Conversation };
   chat: { [chatId: string]: Message[] };
   isCoversationLoading: boolean;
   isChatMessagesLoading: boolean;
+}
+
+export interface ISendMsgArgs {
+  chatId: string;
+  content: string;
+  senderId: string;
+  receiverId: string | null;
+  conversationType: "direct" | "group";
 }
 
 export type SocketConnectionStatus =
@@ -60,21 +75,19 @@ export type ChatAction =
       payload: { loadType: "messages" | "conversation"; isLoading: boolean };
     };
 
-export interface ChatContextType extends ChatState {
+export interface ChatContextType extends IChatState {
   socketConnectionStatus: SocketConnectionStatus;
-  sendMessage: (
-    chatId: string,
-    content: string,
-    senderId: string,
-    receiverId: string
-  ) => void;
+  sendMessage: (args: ISendMsgArgs) => void;
   receiveMessage: (chatId: string, message: Message) => void;
   fetchConversations: () => Promise<void>;
   fetchMessages: (chatId: string) => Promise<void>;
 }
 
 export interface ClientToServerEvents {
-  send_message: (chatId: string, message: Message) => void;
+  send_message: (
+    chatId: string,
+    message: Omit<Message, "id" | "status">
+  ) => void;
 }
 
 export interface ServerToClientEvents {

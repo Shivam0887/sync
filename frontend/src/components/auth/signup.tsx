@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 
-import { Eye, EyeOff, User } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import {
   Form,
   FormControl,
@@ -17,18 +17,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { signupSchema } from "@/lib/schema";
-import type { AuthType } from "@/types/auth.types";
 import { useAuth } from "@/providers/auth-provider";
 import { toastErrorHandler } from "@/lib/utils";
 import { toast } from "sonner";
 
 type TSignup = z.infer<typeof signupSchema>;
 
-interface SignupProps {
-  setAuthType: React.Dispatch<React.SetStateAction<AuthType>>;
-}
-
-const Signup = ({ setAuthType }: SignupProps) => {
+const Signup = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -80,29 +75,9 @@ const Signup = ({ setAuthType }: SignupProps) => {
   };
 
   return (
-    <div className="flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
+    <div className="flex items-center justify-center bg-background">
       <div className="max-w-4xl w-full flex overflow-hidden">
-        <div className="w-full max-w-xl p-4 md:p-8 space-y-8">
-          <div>
-            <div className="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-primary/10">
-              <User className="h-6 w-6 text-primary" />
-            </div>
-            <h2 className="mt-6 text-center text-3xl text-foreground">
-              Create your account
-            </h2>
-            <p className="mt-2 text-center text-sm text-muted-foreground">
-              Or{" "}
-              <Button
-                type="button"
-                variant="link"
-                onClick={() => setAuthType("signin")}
-                className="font-medium text-primary hover:text-primary/80"
-              >
-                sign in to existing account
-              </Button>
-            </p>
-          </div>
-
+        <div className="w-full max-w-xl px-6 pb-6 space-y-8">
           <Form {...form}>
             <form
               className="mt-8 space-y-6"
