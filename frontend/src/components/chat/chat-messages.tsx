@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { format } from "date-fns";
 import ChatMessagesSkeleton from "../skeleton-loading/chat-messages-skeleton";
-import { useChat } from "@/providers/chat-provider";
+import { useChat, useChatLoading, useConversations } from "@/stores/chat-store";
 
 interface ChatMessageProps {
   message: Message;
@@ -97,7 +97,9 @@ const ChatMessages = ({
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { chat: messages, isChatMessagesLoading, conversation } = useChat();
+  const messages = useChat(chatId);
+  const conversation = useConversations();
+  const { isChatMessagesLoading } = useChatLoading();
 
   useEffect(() => {
     const scrollToBottom = () => {
@@ -109,7 +111,7 @@ const ChatMessages = ({
 
   const groupedMessages: { [key: string]: Message[] } = {};
 
-  (messages[chatId as string] || []).forEach((message) => {
+  (messages || []).forEach((message) => {
     const dateKey = format(message.timestamp, "yyyy-MM-dd");
     if (!groupedMessages[dateKey]) {
       groupedMessages[dateKey] = [];

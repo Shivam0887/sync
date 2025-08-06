@@ -1,3 +1,5 @@
+import type { IConversationBase } from "@/types/chat.types";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -6,9 +8,8 @@ import useThrottle from "@/hooks/use-throttle";
 import ChatSidebar from "@/components/chat/chat-sidebar";
 import FindFriends from "@/components/chat/find-friends";
 import { Outlet } from "react-router";
-import { useChat } from "@/providers/chat-provider";
-import { useAuth } from "@/providers/auth-provider";
-import type { IConversationBase } from "@/types/chat.types";
+import { useConversations, useSocket } from "@/stores/chat-store";
+import { useUser } from "@/stores/auth-store";
 
 const MIN_WIDTH = 260;
 const WIDTH = 320;
@@ -30,11 +31,9 @@ const ChatLayout = () => {
 
   const isMobile = useIsMobile();
 
-  const { user } = useAuth();
-  const { conversation } = useChat();
-
-  const userId = useMemo(() => user!.id, [user!.id]);
-  const userConversations = useMemo(() => conversation, [conversation]);
+  const user = useUser();
+  const { initializeSocket, cleanupSocket } = useSocket();
+  const conversations = useConversations();
 
   const handleMouseMove = (evt: MouseEvent) => {
     evt.stopPropagation();
@@ -73,12 +72,13 @@ const ChatLayout = () => {
   }, [throlledHandleMove]);
 
   useEffect(() => {
-    if (!userConversations) return;
     // Extract and set users from conversation state
-    const participants = Object.entries(userConversations).reduce(
-      (result, [_, c]) => {
+    const participants = Object.entries(conversations).reduce(
+      (result, [, c]) => {
         if (c.type === "direct") {
-          result.push({ ...c.participants.filter((u) => u.id !== userId)[0] });
+          result.push({
+            ...c.participants.filter((u) => u.id !== user?.id)[0],
+          });
         }
         return result;
       },
@@ -86,7 +86,15 @@ const ChatLayout = () => {
     );
 
     setAllUsers(participants);
-  }, [userId, userConversations]);
+  }, [user, conversations]);
+
+  useEffect(() => {
+    if (user) initializeSocket();
+
+    return () => {
+      cleanupSocket();
+    };
+  }, [user, initializeSocket, cleanupSocket]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);

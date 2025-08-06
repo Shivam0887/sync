@@ -3,10 +3,12 @@ import type { AuthType } from "@/types/auth.types";
 import { MessageCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import ToggleTheme from "./toggle-theme";
-import { useAuth } from "@/providers/auth-provider";
+import { useAuthActions, useAuthModal, useUser } from "@/stores/auth-store";
 
 const Navbar = () => {
-  const { user, logout, setAuthModalOpen, setAuthType } = useAuth();
+  const user = useUser();
+  const { logout } = useAuthActions();
+  const { setAuthType, setAuthModalOpen } = useAuthModal();
 
   const handleAuthClick = (authType: AuthType) => {
     setAuthType(authType);

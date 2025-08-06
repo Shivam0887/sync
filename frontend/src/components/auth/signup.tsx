@@ -17,9 +17,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { signupSchema } from "@/lib/schema";
-import { useAuth } from "@/providers/auth-provider";
 import { toastErrorHandler } from "@/lib/utils";
 import { toast } from "sonner";
+import { useAuthActions } from "@/stores/auth-store";
+import { apiRequest } from "@/services/api-request";
 
 type TSignup = z.infer<typeof signupSchema>;
 
@@ -27,7 +28,7 @@ const Signup = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const { signup, apiRequest } = useAuth();
+  const { signup } = useAuthActions();
 
   const form = useForm<TSignup>({
     resolver: zodResolver(signupSchema),

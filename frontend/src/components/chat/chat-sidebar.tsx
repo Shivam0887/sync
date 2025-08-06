@@ -12,9 +12,9 @@ import { Button } from "@/components/ui/button";
 
 import ChatSidebarSkeleton from "../skeleton-loading/chat-sidebar-skeleton";
 import Settings from "../settings";
-import { useChat } from "@/providers/chat-provider";
-import { useAuth } from "@/providers/auth-provider";
 import CreateGroupDialog from "./create-group-modal";
+import { useUser } from "@/stores/auth-store";
+import { useChatLoading, useConversations } from "@/stores/chat-store";
 
 interface ChatSidebarProps {
   onFindFriends: () => void;
@@ -24,8 +24,10 @@ interface ChatSidebarProps {
 const ChatSidebar = ({ onFindFriends, allUsers }: ChatSidebarProps) => {
   const [query, setQuery] = useState("");
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
-  const { conversation, isCoversationLoading } = useChat();
-  const userId = useAuth().user?.id;
+
+  const conversation = useConversations();
+  const { isCoversationLoading } = useChatLoading();
+  const user = useUser();
 
   return (
     <div className="relative border-r z-50 flex flex-col w-[calc(100%-0.2rem)] h-full bg-sidebar text-sidebar-foreground rounded-r-2xl">
@@ -95,7 +97,7 @@ const ChatSidebar = ({ onFindFriends, allUsers }: ChatSidebarProps) => {
               {Object.keys(conversation).map((id) => {
                 const otherUser =
                   conversation[id].type === "direct"
-                    ? conversation[id].participants[0].id !== userId
+                    ? conversation[id].participants[0].id !== user?.id
                       ? conversation[id].participants[0]
                       : conversation[id].participants[1]
                     : { ...conversation[id], username: conversation[id].name };

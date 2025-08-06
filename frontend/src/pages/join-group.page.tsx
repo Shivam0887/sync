@@ -1,15 +1,14 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { useAuth } from "@/providers/auth-provider";
 import { toastErrorHandler } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
+import { apiRequest } from "@/services/api-request";
 
 const JoinGroupPage = () => {
   const { inviteToken } = useParams<{ inviteToken: string }>();
   const [status, setStatus] = useState<"loading" | "success" | "error">(
     "loading"
   );
-  const { apiRequest } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -33,7 +32,7 @@ const JoinGroupPage = () => {
     };
 
     if (inviteToken) joinGroup();
-  }, [inviteToken, apiRequest, navigate]);
+  }, [inviteToken, navigate]);
 
   return (
     <div className="h-screen w-full flex flex-col items-center justify-center">

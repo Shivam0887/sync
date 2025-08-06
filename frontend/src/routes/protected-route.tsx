@@ -1,8 +1,9 @@
-import { useAuth } from "@/providers/auth-provider";
+import { useAuthModal, useAuthStatus } from "@/stores/auth-store";
 import { useEffect } from "react";
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, loading, setAuthModalOpen } = useAuth();
+  const { isAuthenticated, loading } = useAuthStatus();
+  const { setAuthModalOpen } = useAuthModal();
 
   useEffect(() => {
     if (!isAuthenticated && !loading) {

@@ -11,12 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "../ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
-import { useAuth } from "@/providers/auth-provider";
 import { toastErrorHandler } from "@/lib/utils";
 import { useOutletContext } from "react-router";
 import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import type { IUser } from "@/layouts/chat.layout";
+import { apiRequest } from "@/services/api-request";
 
 interface AddGroupMembersDialogProps {
   groupId: string;
@@ -30,7 +30,6 @@ const AddGroupMembersDialog = ({
   const [isOpen, setIsOpen] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const { apiRequest } = useAuth();
 
   const { allUsers: users } = useOutletContext<{ allUsers: IUser }>();
 

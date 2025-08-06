@@ -2,8 +2,8 @@ import ChatHeader from "@/components/chat/chat-header";
 import ChatInput from "@/components/chat/chat-input";
 import ChatMessages from "@/components/chat/chat-messages";
 import { toastErrorHandler } from "@/lib/utils";
-import { useAuth } from "@/providers/auth-provider";
-import { useChat } from "@/providers/chat-provider";
+import { useUser } from "@/stores/auth-store";
+import { useConversations } from "@/stores/chat-store";
 import { Search } from "lucide-react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
 
@@ -17,12 +17,12 @@ const Chat = () => {
   const { chatId } = useParams();
   const router = useNavigate();
 
-  const { conversation } = useChat();
-  const userId = useAuth().user?.id;
+  const conversation = useConversations();
+  const user = useUser();
 
   const { onFindFriends, toggleSidebar } = useOutletContext<IOutletContext>();
 
-  if (!userId) {
+  if (!user) {
     toastErrorHandler({ defaultErrorMsg: "Not authenticated" });
     router("/");
     return;
@@ -52,7 +52,7 @@ const Chat = () => {
 
   const receiverId =
     conversation[chatId].type === "direct"
-      ? conversation[chatId].participants[0].id !== userId
+      ? conversation[chatId].participants[0].id !== user.id
         ? conversation[chatId].participants[0].id
         : conversation[chatId].participants[1].id
       : null;
@@ -61,18 +61,18 @@ const Chat = () => {
     <div className="h-full w-full overflow-hidden pl-1 pr-2">
       <div className="flex flex-col flex-1 h-full w-full gap-y-2">
         <ChatHeader
-          userId={userId}
+          userId={user.id}
           toggleSidebar={toggleSidebar}
           conversationData={conversation[chatId]}
         />
 
         <div className="flex-1 overflow-hidden rounded-xl relative shadow border">
-          <ChatMessages chatId={chatId} userId={userId} />
+          <ChatMessages chatId={chatId} userId={user.id} />
         </div>
 
         <ChatInput
           chatId={chatId}
-          userId={userId}
+          userId={user.id}
           conversationType={conversation[chatId].type}
           receiverId={receiverId}
         />

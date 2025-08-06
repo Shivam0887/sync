@@ -15,15 +15,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { signinSchema } from "@/lib/schema";
-import { useAuth } from "@/providers/auth-provider";
 import { toastErrorHandler } from "@/lib/utils";
 import { toast } from "sonner";
+import { useAuthActions } from "@/stores/auth-store";
 
 type TSignin = z.infer<typeof signinSchema>;
 
 const Signin = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const { signin } = useAuth();
+  const { signin } = useAuthActions();
 
   const navigate = useNavigate();
 

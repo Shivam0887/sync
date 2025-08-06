@@ -51,6 +51,32 @@ export interface IChatState {
   chat: { [chatId: string]: Message[] };
   isCoversationLoading: boolean;
   isChatMessagesLoading: boolean;
+  socketConnectionStatus: SocketConnectionStatus;
+}
+
+export interface IChatActions {
+  // State setters
+  setConversations: (conversations: Conversation[]) => void;
+  setChat: (chatId: string, messages: Message[]) => void;
+  addMessage: (chatId: string, message: Message) => void;
+  setLoading: (
+    loadType: "conversation" | "messages",
+    isLoading: boolean
+  ) => void;
+  setSocketConnectionStatus: (status: SocketConnectionStatus) => void;
+
+  // API actions
+  fetchConversations: () => Promise<void>;
+  fetchMessages: (chatId: string) => Promise<void>;
+  sendMessage: (args: ISendMsgArgs) => Promise<void>;
+  receiveMessage: (chatId: string, message: Message) => void;
+
+  // Socket management
+  initializeSocket: () => void;
+  cleanupSocket: () => void;
+
+  // Utility
+  clearChat: () => void;
 }
 
 export interface ISendMsgArgs {

@@ -10,10 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/avatar";
 import { Search, UserPlus, Loader2 } from "lucide-react";
 import { DialogTitle } from "@radix-ui/react-dialog";
-import { useAuth } from "@/providers/auth-provider";
 import { useNavigate } from "react-router";
-import { useChat } from "@/providers/chat-provider";
 import { toastErrorHandler } from "@/lib/utils";
+import { useUser } from "@/stores/auth-store";
+import { useChatActions } from "@/stores/chat-store";
+import { apiRequest } from "@/services/api-request";
 
 const FindFriends = ({
   open,
@@ -29,8 +30,8 @@ const FindFriends = ({
   );
 
   const router = useNavigate();
-  const { apiRequest, user } = useAuth();
-  const { fetchConversations } = useChat();
+  const user = useUser();
+  const { fetchConversations } = useChatActions();
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();

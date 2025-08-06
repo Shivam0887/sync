@@ -8,13 +8,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useChat } from "@/providers/chat-provider";
-import { useAuth } from "@/providers/auth-provider";
 import { toastErrorHandler } from "@/lib/utils";
 import { useNavigate } from "react-router";
 import { Label } from "../ui/label";
 import type { IUser } from "@/layouts/chat.layout";
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
+import { useChatActions } from "@/stores/chat-store";
+import { apiRequest } from "@/services/api-request";
 
 interface CreateGroupDialogProps {
   open: boolean;
@@ -32,8 +32,7 @@ const CreateGroupDialog = ({
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const { apiRequest } = useAuth();
-  const { fetchConversations } = useChat();
+  const { fetchConversations } = useChatActions();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {

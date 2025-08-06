@@ -7,7 +7,6 @@ import { createBrowserRouter } from "react-router";
 import ProtectedRoute from "./protected-route";
 
 import Loader from "@/components/loader";
-import ChatProvider from "@/providers/chat-provider";
 
 const ChatLayout = lazy(() => import("@/layouts/chat.layout"));
 const Chat = lazy(() => import("@/components/chat/chat"));
@@ -26,9 +25,7 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute>
             <Suspense fallback={<Loader />}>
-              <ChatProvider>
-                <ChatLayout />
-              </ChatProvider>
+              <ChatLayout />
             </Suspense>
           </ProtectedRoute>
         ),

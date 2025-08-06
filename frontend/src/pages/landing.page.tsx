@@ -2,13 +2,14 @@ import { ArrowRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import { useNavigate } from "react-router";
-import { useAuth } from "@/providers/auth-provider";
 import { useEffect } from "react";
 import Navbar from "@/components/navbar";
+import { useAuthModal, useAuthStatus } from "@/stores/auth-store";
 
 export default function ChatHeroSection() {
   const navigate = useNavigate();
-  const { setAuthModalOpen, isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading } = useAuthStatus();
+  const { setAuthModalOpen } = useAuthModal();
 
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
