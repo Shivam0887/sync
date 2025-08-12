@@ -6,9 +6,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { setAuthModalOpen } = useAuthModal();
 
   useEffect(() => {
-    if (!isAuthenticated && !loading) {
-      setAuthModalOpen(true);
-    }
+    setAuthModalOpen(!isAuthenticated && !loading);
   }, [isAuthenticated, loading, setAuthModalOpen]);
 
   return !isAuthenticated ? null : children;

@@ -1,18 +1,8 @@
-import type {
-  IChatState,
-  ISendMsgArgs,
-  Message,
-  SocketConnectionStatus,
-  IChatActions,
-} from "@/types/chat.types";
-import type { Socket } from "socket.io-client";
+import type { IChatState, IChatActions } from "@/types/chat.types";
 
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
-import { socket } from "@/lib/socket";
 import { createSelectors, toastErrorHandler } from "@/lib/utils";
-import { useAuthStore } from "./auth-store";
-import { nanoid } from "nanoid";
 import { apiRequest } from "@/services/api-request";
 
 const useChatStoreBase = create<IChatState & IChatActions>()(
@@ -22,7 +12,6 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
     chat: {},
     isChatMessagesLoading: false,
     isCoversationLoading: false,
-    socketConnectionStatus: "disconnected" as SocketConnectionStatus,
 
     // State setters
     setConversations: (conversations) => {
@@ -55,6 +44,38 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
       });
     },
 
+    updateMessageStatus: (chatId, messageId, status) => {
+      set((state) => {
+        const messages = state.chat[chatId] || [];
+        return {
+          chat: {
+            ...state.chat,
+            [chatId]: messages.map((message) => {
+              if (message.id === messageId) message.status = status;
+
+              return message;
+            }),
+          },
+        };
+      });
+    },
+
+    updateMessageId: (chatId, tempId, newId) => {
+      set((state) => {
+        const messages = state.chat[chatId] || [];
+        return {
+          chat: {
+            ...state.chat,
+            [chatId]: messages.map((message) => {
+              if (message.id === tempId) message.id = newId;
+
+              return message;
+            }),
+          },
+        };
+      });
+    },
+
     setLoading: (loadType, isLoading) => {
       set((state) => ({
         ...state,
@@ -64,17 +85,12 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
       }));
     },
 
-    setSocketConnectionStatus: (status) => {
-      set({ socketConnectionStatus: status });
-    },
-
     clearChat: () => {
       set({
         conversation: {},
         chat: {},
         isChatMessagesLoading: false,
         isCoversationLoading: false,
-        socketConnectionStatus: "disconnected",
       });
     },
 
@@ -114,106 +130,6 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
         setLoading("messages", false);
       }
     },
-
-    sendMessage: async ({
-      chatId,
-      content,
-      conversationType,
-      receiverId,
-      senderId,
-    }: ISendMsgArgs) => {
-      const { addMessage } = get();
-      const timestamp = new Date();
-
-      try {
-        const message: Partial<Message> = {
-          content,
-          id: nanoid(),
-          senderId,
-          timestamp,
-          status: "SENT",
-          type: conversationType,
-        };
-
-        if (message.type === "direct" && receiverId) {
-          message.receiverId = receiverId;
-        }
-
-        socket.emit("send_message", chatId, {
-          content,
-          senderId,
-          type: conversationType,
-          timestamp,
-        });
-
-        addMessage(chatId, message as Message);
-      } catch (error) {
-        toastErrorHandler({ error });
-      }
-    },
-
-    receiveMessage: (chatId: string, message: Message) => {
-      const { addMessage } = get();
-      addMessage(chatId, message);
-    },
-
-    // Socket management
-    initializeSocket: () => {
-      const { setSocketConnectionStatus, receiveMessage, fetchConversations } =
-        get();
-
-      // Initialize conversations
-      fetchConversations();
-
-      const onConnect = () => {
-        setSocketConnectionStatus("connected");
-      };
-
-      const onDisconnect = (reason: Socket.DisconnectReason) => {
-        setSocketConnectionStatus("disconnected");
-        console.log("Socket disconnected:", reason);
-      };
-
-      const onReconnecting = () => {
-        setSocketConnectionStatus("reconnecting");
-      };
-
-      const onConnectError = (err: Error) => {
-        setSocketConnectionStatus("disconnected");
-        toastErrorHandler({ error: err });
-      };
-
-      const handleReceiveMessage = (chatId: string, message: Message) => {
-        receiveMessage(chatId, message);
-      };
-
-      socket.connect();
-      // Add event listeners
-      socket.on("connect", onConnect);
-      socket.on("disconnect", onDisconnect);
-      socket.on("connect_error", onConnectError);
-      socket.io.on("reconnect_attempt", onReconnecting);
-      socket.io.on("reconnect", onConnect);
-      socket.on("receive_message", handleReceiveMessage);
-
-      // Store cleanup function for later use
-      (get() as any)._socketCleanup = () => {
-        socket.disconnect();
-        socket.off("connect", onConnect);
-        socket.off("disconnect", onDisconnect);
-        socket.off("connect_error", onConnectError);
-        socket.io.off("reconnect_attempt", onReconnecting);
-        socket.io.off("reconnect", onConnect);
-        socket.off("receive_message", handleReceiveMessage);
-      };
-    },
-
-    cleanupSocket: () => {
-      const cleanup = (get() as any)._socketCleanup;
-      if (cleanup) {
-        cleanup();
-      }
-    },
   }))
 );
 
@@ -229,27 +145,12 @@ export const useChatLoading = () => ({
   isCoversationLoading: useChatStore.use.isCoversationLoading(),
 });
 
-export const useSocket = () => ({
-  socketConnectionStatus: useChatStore.use.socketConnectionStatus(),
-  initializeSocket: useChatStore.use.initializeSocket(),
-  cleanupSocket: useChatStore.use.cleanupSocket(),
-});
-
 // Action selectors
 export const useChatActions = () => ({
   fetchConversations: useChatStore.use.fetchConversations(),
   fetchMessages: useChatStore.use.fetchMessages(),
-  sendMessage: useChatStore.use.sendMessage(),
-  receiveMessage: useChatStore.use.receiveMessage(),
+  addMessage: useChatStore.use.addMessage(),
+  updateMessageStatus: useChatStore.use.updateMessageStatus(),
+  updateMessageId: useChatStore.use.updateMessageId(),
   clearChat: useChatStore.use.clearChat(),
 });
-
-// Subscribe to auth changes to handle cleanup on logout
-useChatStore.subscribe(
-  () => useAuthStore.getState().isAuthenticated,
-  (isAuthenticated) => {
-    if (!isAuthenticated) {
-      useChatStore.getState().cleanupSocket();
-    }
-  }
-);

@@ -74,7 +74,7 @@ export const chatParticipantsTable = pgTable(
 export const messagesTable = pgTable(
   "messages",
   {
-    id: uuid().primaryKey().defaultRandom(),
+    id: uuid().primaryKey(),
     chatId: uuid()
       .notNull()
       .references(() => chatsTable.id, { onDelete: "cascade" }),

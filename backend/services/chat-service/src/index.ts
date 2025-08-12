@@ -1,8 +1,3 @@
-import type {
-  ClientToServerEvents,
-  ServerToClientEvents,
-} from "./types/index.js";
-
 import { env } from "./config/env.js";
 
 import express from "express";
@@ -10,30 +5,15 @@ import router from "./routes/index.js";
 import cors from "cors";
 
 import { createServer } from "http";
-import { Server } from "socket.io";
 
-import { nanoid } from "nanoid";
 import { AuthError } from "@shared/dist/error-handler/index.js";
 import { errorHandler } from "@shared/dist/error-handler/error.middleware.js";
+import initializeSocketManager from "./socket/socket-manager.js";
 
 const app = express();
 const httpServer = createServer(app);
 
-const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-  cors: {
-    origin: [env.CORS_ORIGIN],
-  },
-  path: "/api/socket",
-  addTrailingSlash: false,
-});
-
-io.on("connection", (socket) => {
-  socket.on("send_message", (chatId, message) => {
-    const msg = { ...message, id: nanoid() };
-    console.log({ msg });
-    socket.broadcast.emit("receive_message", chatId, msg);
-  });
-});
+initializeSocketManager(httpServer);
 
 app.use(
   cors({

@@ -8,7 +8,7 @@ import useThrottle from "@/hooks/use-throttle";
 import ChatSidebar from "@/components/chat/chat-sidebar";
 import FindFriends from "@/components/chat/find-friends";
 import { Outlet } from "react-router";
-import { useConversations, useSocket } from "@/stores/chat-store";
+import { useChatActions, useConversations } from "@/stores/chat-store";
 import { useUser } from "@/stores/auth-store";
 
 const MIN_WIDTH = 260;
@@ -32,8 +32,8 @@ const ChatLayout = () => {
   const isMobile = useIsMobile();
 
   const user = useUser();
-  const { initializeSocket, cleanupSocket } = useSocket();
   const conversations = useConversations();
+  const { fetchConversations } = useChatActions();
 
   const handleMouseMove = (evt: MouseEvent) => {
     evt.stopPropagation();
@@ -49,11 +49,7 @@ const ChatLayout = () => {
   });
 
   useEffect(() => {
-    if (isMobile) {
-      setSidebarOpen(false);
-    } else {
-      setSidebarOpen(true);
-    }
+    setSidebarOpen(!isMobile);
   }, [isMobile]);
 
   useEffect(() => {
@@ -72,6 +68,10 @@ const ChatLayout = () => {
   }, [throlledHandleMove]);
 
   useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  useEffect(() => {
     // Extract and set users from conversation state
     const participants = Object.entries(conversations).reduce(
       (result, [, c]) => {
@@ -87,14 +87,6 @@ const ChatLayout = () => {
 
     setAllUsers(participants);
   }, [user, conversations]);
-
-  useEffect(() => {
-    if (user) initializeSocket();
-
-    return () => {
-      cleanupSocket();
-    };
-  }, [user, initializeSocket, cleanupSocket]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);

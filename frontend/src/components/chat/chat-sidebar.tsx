@@ -4,7 +4,13 @@ import { Link } from "react-router";
 import { useState } from "react";
 
 import { format } from "date-fns";
-import { Search, MessageCircle, UsersRound, UserRound } from "lucide-react";
+import {
+  Search,
+  MessageCircle,
+  UsersRound,
+  UserRound,
+  RefreshCcw,
+} from "lucide-react";
 
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
@@ -15,6 +21,8 @@ import Settings from "../settings";
 import CreateGroupDialog from "./create-group-modal";
 import { useUser } from "@/stores/auth-store";
 import { useChatLoading, useConversations } from "@/stores/chat-store";
+import { Badge } from "../ui/badge";
+import { useSocket } from "@/providers/socket-provider";
 
 interface ChatSidebarProps {
   onFindFriends: () => void;
@@ -26,6 +34,7 @@ const ChatSidebar = ({ onFindFriends, allUsers }: ChatSidebarProps) => {
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
 
   const conversation = useConversations();
+  const { socketConnectionStatus } = useSocket();
   const { isCoversationLoading } = useChatLoading();
   const user = useUser();
 
@@ -44,13 +53,34 @@ const ChatSidebar = ({ onFindFriends, allUsers }: ChatSidebarProps) => {
           </h1>
         </Link>
 
-        <Settings />
+        <div className="flex items-center gap-4">
+          <Badge variant="outline" className="p-2">
+            <div
+              className={`h-[8px] w-[8px] rounded-full ${
+                socketConnectionStatus === "connected"
+                  ? "bg-green-400"
+                  : socketConnectionStatus === "disconnected"
+                  ? "bg-red-400"
+                  : "bg-blue-400"
+              }`}
+            />
+            <span className="text-xs capitalize">{socketConnectionStatus}</span>
+            {socketConnectionStatus === "reconnecting" && (
+              <span>
+                <RefreshCcw className="animate-spin size-3" />
+              </span>
+            )}
+          </Badge>
+
+          <Settings />
+        </div>
       </div>
 
       <div className="px-4 py-3">
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
+            name="search conversation"
             placeholder="Search conversations..."
             className="pl-8 bg-background border-input focus:border-primary/30 text-foreground placeholder:text-muted-foreground focus-visible:ring-ring/20 rounded-lg h-9"
             value={query}

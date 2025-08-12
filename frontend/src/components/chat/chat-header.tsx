@@ -48,10 +48,7 @@ const ChatHeader = ({
   };
 
   return (
-    <header className="border px-4 py-3 rounded-xl relative overflow-hidden flex items-center justify-between shadow">
-      {/* Background layers */}
-      <div className="absolute inset-0 backdrop-blur-xl bg-secondary/50 -z-10"></div>
-
+    <header className="border px-4 py-3 bg-sidebar text-sidebar-foreground rounded-xl relative overflow-hidden flex items-center justify-between shadow">
       <div className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-primary to-transparent"></div>
 
       <div className="flex items-center">
@@ -62,29 +59,23 @@ const ChatHeader = ({
           className="mr-3 md:mr-2 text-foreground/80 hover:text-foreground hover:bg-white/5 relative"
         >
           <Menu size={18} />
-          <span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full bg-chat-primary animate-pulse"></span>
+          <span className="absolute -right-0.5 -top-0.5 w-1.5 h-1.5 rounded-full animate-pulse"></span>
         </Button>
         <div
           className="flex items-center cursor-pointer"
           onClick={handleProfileClick}
         >
           <div className="relative">
-            <Avatar className="h-9 w-9 border border-white/10 ring-2 ring-[#7F5AF0]/20">
+            <Avatar className="h-9 w-9 border border-white/10 ring-2 ring-ring/20">
               <AvatarImage src={avatarUrl} />
               <AvatarFallback>
                 {name[0].toUpperCase() + name[1].toUpperCase()}
               </AvatarFallback>
             </Avatar>
-            <span className="absolute -bottom-0.5 -right-0.4 h-3 w-3 rounded-full ring-2 ring-ring"></span>
           </div>
           <div className="ml-3 hidden sm:block">
-            <div className="font-medium text-secondary-foreground capitalize">
-              {name}
-            </div>
-            <div className="text-xs text-muted-foreground flex items-center">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-chat-green mr-1.5 animate-glow-pulse"></span>
-              Active now
-            </div>
+            <div className="font-medium capitalize">{name}</div>
+            <span className="text-xs">Active now</span>
           </div>
         </div>
       </div>

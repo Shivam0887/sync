@@ -4,7 +4,7 @@
   "description": "API Gateway built with Node.js",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "tsx --import=./src/instrument.ts --watch src/index.ts",
+    "dev": "tsx watch --import=./src/instrument.ts src/index.ts",
     "build": "pnpm i && tsc && tsc-alias && pnpm sentry:sourcemaps",
     "start": "node --import=./dist/instrument.js ./dist/index.js",
     "sentry:sourcemaps": "sentry-cli sourcemaps inject --org shivam-org --project node-express dist && sentry-cli sourcemaps upload --org shivam-org --project node-express dist"

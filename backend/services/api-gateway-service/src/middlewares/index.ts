@@ -25,6 +25,7 @@ const publicEndpoints = [
   /\/api\/auth\/signin/,
   /\/api\/auth\/refresh-token/,
   /\/api\/user\/username\/.*\/check/,
+  /^\api\/socket/,
 ];
 
 export const authenticateToken = async (

@@ -1,8 +1,32 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) + "/api";
 
+export const refreshAccessToken = async () => {
+  const refreshToken = localStorage.getItem("refreshToken");
+  const resp = await fetch(`${API_BASE_URL}/auth/refresh-token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+  });
+
+  if (!resp.ok) throw new Error("Session expired");
+
+  const refreshData = await resp.json();
+
+  const newAccessToken = refreshData.accessToken as string;
+  const newRefreshToken = refreshData.refreshToken as string;
+
+  localStorage.setItem("accessToken", newAccessToken);
+  localStorage.setItem("refreshToken", newRefreshToken);
+
+  return {
+    newAccessToken,
+    newRefreshToken,
+  };
+};
+
 export const apiRequest = async (url: string, options?: RequestInit) => {
-  let accessToken = localStorage.getItem("accessToken");
-  let refreshToken = localStorage.getItem("refreshToken");
+  const accessToken = localStorage.getItem("accessToken");
+  const refreshToken = localStorage.getItem("refreshToken");
 
   let response = await fetch(`${API_BASE_URL}${url}`, {
     headers: {
@@ -13,25 +37,11 @@ export const apiRequest = async (url: string, options?: RequestInit) => {
   });
 
   if (response.status === 401 && refreshToken) {
-    const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh-token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
-
-    if (!refreshResponse.ok) throw new Error("Session expired");
-
-    const refreshData = await refreshResponse.json();
-
-    accessToken = refreshData.accessToken as string;
-    refreshToken = refreshData.refreshToken as string;
-
-    localStorage.setItem("accessToken", accessToken);
-    localStorage.setItem("refreshToken", refreshToken);
+    const { newAccessToken } = await refreshAccessToken();
 
     response = await fetch(`${API_BASE_URL}${url}`, {
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${newAccessToken}`,
         "Content-Type": "application/json",
       },
       ...options,

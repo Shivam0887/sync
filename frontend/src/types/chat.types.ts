@@ -1,4 +1,11 @@
-type MessageStatus = "SENT" | "DELIVERED" | "READ";
+import type { Socket } from "socket.io-client";
+
+export type MessageStatus =
+  | "SENDING"
+  | "SENT"
+  | "DELIVERED"
+  | "READ"
+  | "FAILED";
 
 export interface IMessageBase {
   id: string;
@@ -51,7 +58,6 @@ export interface IChatState {
   chat: { [chatId: string]: Message[] };
   isCoversationLoading: boolean;
   isChatMessagesLoading: boolean;
-  socketConnectionStatus: SocketConnectionStatus;
 }
 
 export interface IChatActions {
@@ -59,32 +65,23 @@ export interface IChatActions {
   setConversations: (conversations: Conversation[]) => void;
   setChat: (chatId: string, messages: Message[]) => void;
   addMessage: (chatId: string, message: Message) => void;
+  updateMessageStatus: (
+    chatId: string,
+    messageId: string,
+    status: MessageStatus
+  ) => void;
+  updateMessageId: (chatId: string, tempId: string, newId: string) => void;
   setLoading: (
     loadType: "conversation" | "messages",
     isLoading: boolean
   ) => void;
-  setSocketConnectionStatus: (status: SocketConnectionStatus) => void;
 
   // API actions
   fetchConversations: () => Promise<void>;
   fetchMessages: (chatId: string) => Promise<void>;
-  sendMessage: (args: ISendMsgArgs) => Promise<void>;
-  receiveMessage: (chatId: string, message: Message) => void;
-
-  // Socket management
-  initializeSocket: () => void;
-  cleanupSocket: () => void;
 
   // Utility
   clearChat: () => void;
-}
-
-export interface ISendMsgArgs {
-  chatId: string;
-  content: string;
-  senderId: string;
-  receiverId: string | null;
-  conversationType: "direct" | "group";
 }
 
 export type SocketConnectionStatus =
@@ -92,30 +89,27 @@ export type SocketConnectionStatus =
   | "disconnected"
   | "reconnecting";
 
-export type ChatAction =
-  | { type: "SET_CONVERSATIONS"; payload: Conversation[] }
-  | { type: "SET_CHAT"; payload: { chatId: string; messages: Message[] } }
-  | { type: "ADD_MESSAGE"; payload: { chatId: string; message: Message } }
-  | {
-      type: "SET_LOADING";
-      payload: { loadType: "messages" | "conversation"; isLoading: boolean };
-    };
-
-export interface ChatContextType extends IChatState {
-  socketConnectionStatus: SocketConnectionStatus;
-  sendMessage: (args: ISendMsgArgs) => void;
-  receiveMessage: (chatId: string, message: Message) => void;
-  fetchConversations: () => Promise<void>;
-  fetchMessages: (chatId: string) => Promise<void>;
-}
-
 export interface ClientToServerEvents {
   send_message: (
     chatId: string,
-    message: Omit<Message, "id" | "status">
+    message: Omit<Message, "status">,
+    cb: (msg: { tempId: string; newId: string }) => void
+  ) => void;
+  message_status: (
+    senderId: string,
+    chatId: string,
+    messageId: string,
+    status: "READ"
   ) => void;
 }
 
 export interface ServerToClientEvents {
-  receive_message: (chatId: string, message: Message) => void;
+  receive_message: (chatId: string, message: Message, cb: () => void) => void;
+  message_status: (
+    chatId: string,
+    messageId: string,
+    status: "DELIVERED" | "READ"
+  ) => void;
 }
+
+export type IOSocket = Socket<ServerToClientEvents, ClientToServerEvents>;

@@ -1,16 +1,21 @@
-import type { Conversation, Message } from "@/types/chat.types";
+import type { Conversation, Message, MessageStatus } from "@/types/chat.types";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Avatar } from "@/components/ui/avatar";
-import { format } from "date-fns";
+import { format, getTime } from "date-fns";
 import ChatMessagesSkeleton from "../skeleton-loading/chat-messages-skeleton";
 import { useChat, useChatLoading, useConversations } from "@/stores/chat-store";
+import { Check, CheckCheck, CircleAlert, Clock } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useSocket } from "@/providers/socket-provider";
 
 interface ChatMessageProps {
   message: Message;
   userId: string;
   conversation: Conversation;
   isConsecutive: boolean;
+  playSendMessageSound: () => void;
+  containerClassName?: string;
 }
 
 const ChatMessage = ({
@@ -18,7 +23,20 @@ const ChatMessage = ({
   userId,
   conversation,
   isConsecutive,
+  playSendMessageSound,
+  containerClassName,
 }: ChatMessageProps) => {
+  const prevMessageStatusRef = useRef(message.status);
+
+  useEffect(() => {
+    if (
+      prevMessageStatusRef.current === "SENDING" &&
+      (message.status === "SENT" || message.status === "DELIVERED")
+    ) {
+      playSendMessageSound();
+    }
+  }, [message.status, playSendMessageSound]);
+
   // For direct messages, get the other participant's info
   let otherUser: { id: string; username: string } | undefined;
 
@@ -45,8 +63,24 @@ const ChatMessage = ({
     senderName = sender?.username;
   }
 
+  const StatusToIcon: Record<MessageStatus, React.ReactNode> = {
+    SENDING: <Clock className="stroke-[2.5] size-4" />,
+    SENT: <Check className="stroke-[2.5] size-4" />,
+    DELIVERED: <CheckCheck className="stroke-[2.5] size-4" />,
+    READ: <CheckCheck className="stroke-[2.5] size-4 text-[#53bdeb]" />,
+    FAILED: <CircleAlert className="stroke-[2.5] size-4 text-red-600" />,
+  };
+
   return (
-    <div className={`flex mb-5 ${isSelf ? "justify-end" : "justify-start"}`}>
+    <div
+      id={`${senderId}:${message.id}`}
+      className={cn(
+        `flex mb-5 ${isSelf ? "justify-end" : "justify-start"}`,
+        containerClassName
+      )}
+      data-status={message.status}
+      data-user={senderId}
+    >
       {!isSelf && !isConsecutive && (
         <Avatar className="h-8 w-8 mr-2 mt-1 border border-border">
           <div className="bg-secondary h-full w-full flex items-center justify-center text-base font-medium text-secondary-foreground">
@@ -80,7 +114,21 @@ const ChatMessage = ({
               isSelf ? "justify-end" : "justify-start"
             }`}
           >
-            <span>{format(message.timestamp, "h:mm a")}</span>
+            <span className="inline-flex items-center gap-2">
+              {format(message.timestamp, "h:mm a")}
+
+              {isSelf && (
+                <span
+                  className={`transition-transform ${
+                    message.status === "READ"
+                      ? "rotate-y-[360deg]"
+                      : "rotate-y-0"
+                  }`}
+                >
+                  {StatusToIcon[message.status]}
+                </span>
+              )}
+            </span>
           </div>
         </div>
       </div>
@@ -96,18 +144,49 @@ const ChatMessages = ({
   userId: string;
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const messages = useChat(chatId);
   const conversation = useConversations();
   const { isChatMessagesLoading } = useChatLoading();
+  const { onMessageRead } = useSocket();
 
   useEffect(() => {
     const scrollToBottom = () => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
     };
 
     scrollToBottom();
+  }, [messages]);
+
+  const playSendMessageSound = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.play();
+    }
   }, []);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const [senderId, messageId] = entry.target.id.split(":");
+
+          onMessageRead(senderId, chatId, messageId);
+          observer.unobserve(entry.target);
+        }
+      });
+    });
+
+    const unreadMessages = Array.from(
+      document.querySelectorAll("[data-status=SENT]")
+    ).filter((elem) => elem.getAttribute("data-user") !== userId);
+
+    unreadMessages.forEach((elem) => observer.observe(elem));
+
+    return () => {
+      unreadMessages.forEach((elem) => observer.unobserve(elem));
+    };
+  }, [userId, chatId, messages, onMessageRead]);
 
   const groupedMessages: { [key: string]: Message[] } = {};
 
@@ -122,12 +201,17 @@ const ChatMessages = ({
   if (!conversation[chatId])
     return (
       <div className="text-center text-destructive py-8">
-        Conversation not found or you don’t have access.
+        Conversation not found or you don&apos;t have access.
       </div>
     );
 
   return (
-    <div className="h-full w-full bg-secondary/50 overflow-y-auto p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+    <div className="h-full w-full bg-sidebar text-sidebar-foreground overflow-y-auto p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <audio
+        ref={audioRef}
+        src="/audio/sending-message-sound-effect.mp3"
+        hidden
+      />
       {isChatMessagesLoading ? (
         <ChatMessagesSkeleton />
       ) : (
@@ -139,10 +223,10 @@ const ChatMessages = ({
                   {format(new Date(date), "EEEE, MMMM d, yyyy")}
                 </span>
               </div>
-
               {messagesGroup.map((message, i) => (
                 <ChatMessage
-                  key={message.id}
+                  key={getTime(message.timestamp)}
+                  playSendMessageSound={playSendMessageSound}
                   conversation={conversation[chatId]}
                   message={message}
                   userId={userId}
