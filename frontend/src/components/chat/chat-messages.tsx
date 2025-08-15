@@ -4,8 +4,13 @@ import { useCallback, useEffect, useRef } from "react";
 import { Avatar } from "@/components/ui/avatar";
 import { format, getTime } from "date-fns";
 import ChatMessagesSkeleton from "../skeleton-loading/chat-messages-skeleton";
-import { useChat, useChatLoading, useConversations } from "@/stores/chat-store";
-import { Check, CheckCheck, CircleAlert, Clock } from "lucide-react";
+import {
+  useChat,
+  useChatLoading,
+  useConversations,
+  useTypingStatus,
+} from "@/stores/chat-store";
+import { Check, CheckCheck, CircleAlert, Clock, Ellipsis } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSocket } from "@/providers/socket-provider";
 
@@ -150,6 +155,7 @@ const ChatMessages = ({
   const conversation = useConversations();
   const { isChatMessagesLoading } = useChatLoading();
   const { onMessageRead } = useSocket();
+  const isTyping = useTypingStatus(chatId, userId);
 
   useEffect(() => {
     const scrollToBottom = () => {
@@ -161,6 +167,7 @@ const ChatMessages = ({
 
   const playSendMessageSound = useCallback(() => {
     if (audioRef.current) {
+      audioRef.current.volume = 0.1;
       audioRef.current.play();
     }
   }, []);
@@ -170,15 +177,14 @@ const ChatMessages = ({
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
           const [senderId, messageId] = entry.target.id.split(":");
-
-          onMessageRead(senderId, chatId, messageId);
+          onMessageRead(chatId, senderId, messageId);
           observer.unobserve(entry.target);
         }
       });
     });
 
     const unreadMessages = Array.from(
-      document.querySelectorAll("[data-status=SENT]")
+      document.querySelectorAll("[data-status=DELIVERED]")
     ).filter((elem) => elem.getAttribute("data-user") !== userId);
 
     unreadMessages.forEach((elem) => observer.observe(elem));
@@ -217,8 +223,8 @@ const ChatMessages = ({
       ) : (
         <>
           {Object.entries(groupedMessages).map(([date, messagesGroup]) => (
-            <div key={date} className="mb-6">
-              <div className="flex justify-center mb-6">
+            <div key={date} className="mb-6 relative">
+              <div className="sticky top-0 flex justify-center mb-6">
                 <span className="px-4 py-1.5 text-xs bg-accent backdrop-blur-md rounded-full text-accent-foreground border">
                   {format(new Date(date), "EEEE, MMMM d, yyyy")}
                 </span>
@@ -235,9 +241,14 @@ const ChatMessages = ({
                   }
                 />
               ))}
+
+              {isTyping && (
+                <div className="max-w-fit px-4 py-2 rounded-lg bg-secondary text-secondary-foreground ring-ring/15">
+                  <Ellipsis className="size-6 animate-pulse" />
+                </div>
+              )}
             </div>
           ))}
-
           <div ref={messagesEndRef} />
         </>
       )}

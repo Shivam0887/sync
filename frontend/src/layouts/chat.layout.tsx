@@ -3,7 +3,7 @@ import type { IConversationBase } from "@/types/chat.types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useIsMobile } from "@/hooks/use-mobile";
-import useThrottle from "@/hooks/use-throttle";
+import useThrottleCallback from "@/hooks/use-throttle-callback";
 
 import ChatSidebar from "@/components/chat/chat-sidebar";
 import FindFriends from "@/components/chat/find-friends";
@@ -42,8 +42,7 @@ const ChatLayout = () => {
     setSidebarWidth(newWidth);
   };
 
-  const throlledHandleMove = useThrottle({
-    isFunc: true,
+  const throlledHandleMove = useThrottleCallback({
     cb: handleMouseMove,
     delay: 50,
   });

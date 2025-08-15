@@ -1,9 +1,4 @@
-import type {
-  IOSocket,
-  Message,
-  ServerToClientEvents,
-  SocketConnectionStatus,
-} from "@/types/chat.types";
+import type { Message } from "@/types/chat.types";
 import type { Socket } from "socket.io-client";
 
 import { type ExtendedConnectError, createSocket } from "@/lib/socket";
@@ -20,11 +15,17 @@ import {
   useRef,
   useState,
 } from "react";
+import type {
+  IOSocket,
+  ServerToClientEvents,
+  SocketConnectionStatus,
+} from "@/types/socket.types";
 
 interface SocketContextState {
   socketConnectionStatus: SocketConnectionStatus;
   sendMessage: (chatId: string, message: Message) => Promise<void>;
-  onMessageRead: (senderId: string, chatId: string, messageId: string) => void;
+  onMessageRead: (chatId: string, senderId: string, messageId: string) => void;
+  onUserTyping: (chatId: string, userId: string, isTyping: boolean) => void;
 }
 
 const SocketContext = createContext<SocketContextState | undefined>(undefined);
@@ -47,12 +48,17 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
 
   const socketRef = useRef<IOSocket | null>(null);
 
-  const { addMessage, updateMessageStatus, updateMessageId } = useChatActions();
+  const {
+    addMessage,
+    updateMessageStatus,
+    updateMessageId,
+    updateTypingStatus,
+  } = useChatActions();
 
   const user = useUser();
 
-  const sendMessage = useCallback(
-    async (chatId: string, message: Message): Promise<void> => {
+  const sendMessage: SocketContextState["sendMessage"] = useCallback(
+    async (chatId, message): Promise<void> => {
       const socket = socketRef.current;
 
       // Check if socket is connected
@@ -79,16 +85,24 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     [addMessage, updateMessageStatus, updateMessageId]
   );
 
-  const onMessageRead = useCallback(
-    (senderId: string, chatId: string, messageId: string) => {
+  const onMessageRead: SocketContextState["onMessageRead"] = useCallback(
+    (chatId, senderId, messageId) => {
       const socket = socketRef.current;
 
       if (socket) {
         socket.emit("message_status", senderId, chatId, messageId, "READ");
-        updateMessageStatus(chatId, messageId, "DELIVERED");
       }
     },
-    [updateMessageStatus]
+    []
+  );
+
+  const onUserTyping: SocketContextState["onUserTyping"] = useCallback(
+    (chatId, userId, isTyping) => {
+      if (socketRef.current) {
+        socketRef.current.emit("user_typing", chatId, userId, isTyping);
+      }
+    },
+    []
   );
 
   useEffect(() => {
@@ -165,14 +179,6 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const onMessageStatusChange: ServerToClientEvents["message_status"] = (
-      chatId,
-      messageId,
-      status
-    ) => {
-      updateMessageStatus(chatId, messageId, status);
-    };
-
     const onMessageReceive: ServerToClientEvents["receive_message"] = (
       chatId,
       message,
@@ -181,6 +187,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         addMessage(chatId, message);
         cb(); // Acknowledgement to the server
+        updateMessageStatus(chatId, message.id, "DELIVERED");
       } catch (error) {
         console.error("Error processing received message:", error);
         // Still acknowledge to prevent server retries
@@ -205,7 +212,8 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     socket.io.on("reconnect", onReconnected);
 
     socket.on("receive_message", onMessageReceive);
-    socket.on("message_status", onMessageStatusChange);
+    socket.on("message_status", updateMessageStatus);
+    socket.on("user_typing", updateTypingStatus);
 
     return () => {
       // Clear auth
@@ -221,13 +229,25 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       socket.io.off("reconnect", onReconnected);
 
       socket.off("receive_message", onMessageReceive);
-      socket.off("message_status", onMessageStatusChange);
+      socket.off("message_status", updateMessageStatus);
+      socket.off("user_typing", updateTypingStatus);
     };
-  }, [addMessage, user?.id, accessToken, updateMessageStatus]); // Fixed dependencies
+  }, [
+    addMessage,
+    user?.id,
+    accessToken,
+    updateMessageStatus,
+    updateTypingStatus,
+  ]); // Fixed dependencies
 
   const value = useMemo(
-    () => ({ socketConnectionStatus, sendMessage, onMessageRead }),
-    [socketConnectionStatus, sendMessage, onMessageRead]
+    () => ({
+      socketConnectionStatus,
+      sendMessage,
+      onMessageRead,
+      onUserTyping,
+    }),
+    [socketConnectionStatus, sendMessage, onMessageRead, onUserTyping]
   );
 
   return (

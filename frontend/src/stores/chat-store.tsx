@@ -10,6 +10,7 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
     // Initial state
     conversation: {},
     chat: {},
+    typingStatus: {},
     isChatMessagesLoading: false,
     isCoversationLoading: false,
 
@@ -52,7 +53,6 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
             ...state.chat,
             [chatId]: messages.map((message) => {
               if (message.id === messageId) message.status = status;
-
               return message;
             }),
           },
@@ -74,6 +74,16 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
           },
         };
       });
+    },
+
+    updateTypingStatus: (chatId, userId, isTyping) => {
+      set(() => ({
+        typingStatus: {
+          [chatId]: {
+            [userId]: isTyping,
+          },
+        },
+      }));
     },
 
     setLoading: (loadType, isLoading) => {
@@ -138,6 +148,13 @@ export const useChatStore = createSelectors(useChatStoreBase);
 
 export const useConversations = () => useChatStore.use.conversation();
 
+export const useTypingStatus = (chatId: string, userId: string) => {
+  const isTyping: boolean | undefined =
+    useChatStore.use.typingStatus()[chatId]?.[userId];
+
+  return isTyping ?? false;
+};
+
 export const useChat = (chatId: string) => useChatStore.use.chat()[chatId];
 
 export const useChatLoading = () => ({
@@ -151,6 +168,7 @@ export const useChatActions = () => ({
   fetchMessages: useChatStore.use.fetchMessages(),
   addMessage: useChatStore.use.addMessage(),
   updateMessageStatus: useChatStore.use.updateMessageStatus(),
+  updateTypingStatus: useChatStore.use.updateTypingStatus(),
   updateMessageId: useChatStore.use.updateMessageId(),
   clearChat: useChatStore.use.clearChat(),
 });

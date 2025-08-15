@@ -12,7 +12,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: [env.CORS_ORIGIN],
+    origin: env.CORS_ORIGIN.split(","),
     allowedHeaders: ["x-forwarded-user", "authorization", "content-type"],
   }),
   express.json(),

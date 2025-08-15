@@ -23,6 +23,7 @@ export interface ServerToClientEvents {
     messageId: string,
     status: "DELIVERED" | "READ"
   ) => void;
+  user_typing: (chatId: string, userId: string, isTying: boolean) => void;
 }
 
 export interface ClientToServerEvents {
@@ -37,6 +38,7 @@ export interface ClientToServerEvents {
     messageId: string,
     status: "READ"
   ) => void;
+  user_typing: (chatId: string, userId: string, isTying: boolean) => void;
   join_group: (
     groupId: string,
     ack: (arg: { ok: false; error: string } | { ok: true }) => {}

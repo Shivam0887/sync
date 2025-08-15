@@ -2,7 +2,7 @@
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
-} from "@/types/chat.types";
+} from "@/types/socket.types";
 import { io, Socket } from "socket.io-client";
 
 const URL = import.meta.env.VITE_API_BASE_URL as string;

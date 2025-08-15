@@ -52,6 +52,21 @@ export const ThemeProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     const currentTheme = (localStorage.getItem("theme") ?? "light") as Theme;
     onThemeChange(currentTheme);
+
+    const handleMatchMedia = (ev: MediaQueryListEvent) => {
+      const currentTheme = localStorage.getItem("theme");
+
+      if (currentTheme === "system") {
+        document.documentElement.classList.toggle("dark", ev.matches);
+      }
+    };
+
+    const matchMediaElm = matchMedia("(prefers-color-scheme:dark)");
+    matchMediaElm.addEventListener("change", handleMatchMedia);
+
+    return () => {
+      matchMediaElm.removeEventListener("change", handleMatchMedia);
+    };
   }, [onThemeChange]);
 
   return (

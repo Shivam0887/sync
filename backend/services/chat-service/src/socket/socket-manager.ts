@@ -11,6 +11,7 @@ const payloadSchema = z.object({
   message: z.custom<IMessage>().optional(),
   messageId: z.string().optional(),
   status: z.enum(["DELIVERED", "READ"]).optional(),
+  isTyping: z.boolean().optional(),
 });
 
 class SocketManager {
@@ -43,18 +44,23 @@ class SocketManager {
     this.sub.on("message", async (channel: string, raw: string) => {
       try {
         const parsed = JSON.parse(raw);
-        const { chatId, message, status, messageId } =
+        const { chatId, message, status, messageId, isTyping } =
           payloadSchema.parse(parsed);
 
-        if (channel.startsWith("u:") && message) {
+        if (channel.startsWith("u:")) {
           const targetUserId = channel.slice(2);
-          await this.handleIncomingUserMessage(targetUserId, chatId, message);
+
+          if (message && isTyping === undefined) {
+            await this.onIncomingUserMessage(targetUserId, chatId, message);
+          } else if (!message && isTyping !== undefined) {
+            await this.onUserTyping(chatId, targetUserId, isTyping);
+          }
         } else if (channel.startsWith("g:") && message) {
           const groupId = channel.slice(2);
-          await this.handleIncomingGroupMessage(groupId, message);
+          await this.onIncomingGroupMessage(groupId, message);
         } else if (channel.startsWith("ack:") && status && messageId) {
           const senderUserId = channel.slice(4);
-          await this.handleIncomingAck(senderUserId, chatId, messageId, status);
+          await this.onIncomingAck(senderUserId, chatId, messageId, status);
         } else {
           console.warn("Unknown redis channel:", channel);
         }
@@ -137,7 +143,7 @@ class SocketManager {
     }
   }
 
-  private async handleIncomingUserMessage(
+  private async onIncomingUserMessage(
     userId: string,
     chatId: string,
     message: IMessage
@@ -183,7 +189,7 @@ class SocketManager {
     }
   }
 
-  private async handleIncomingGroupMessage(chatId: string, message: IMessage) {
+  private async onIncomingGroupMessage(chatId: string, message: IMessage) {
     const members = this.groupToUsersLocal.get(chatId);
     if (!members) return;
 
@@ -204,7 +210,7 @@ class SocketManager {
     }
   }
 
-  private async handleIncomingAck(
+  private async onIncomingAck(
     senderUserId: string,
     chatId: string,
     messageId: string,
@@ -214,9 +220,27 @@ class SocketManager {
     if (!sockets) return;
 
     for (const socketId of sockets) {
-      const socket = this.ioInstance!.sockets.sockets.get(socketId);
+      const socket = this.ioInstance.sockets.sockets.get(socketId);
       if (socket) {
         socket.emit("message_status", chatId, messageId, status);
+      } else {
+        this.cleanupSocket(socketId);
+      }
+    }
+  }
+
+  private async onUserTyping(
+    chatId: string,
+    userId: string,
+    isTyping: boolean
+  ) {
+    const sockets = this.userToSockets.get(userId);
+    if (!sockets) return;
+
+    for (const socketId of sockets) {
+      const socket = this.ioInstance.sockets.sockets.get(socketId);
+      if (socket) {
+        socket.emit("user_typing", chatId, userId, isTyping);
       } else {
         this.cleanupSocket(socketId);
       }
@@ -227,6 +251,7 @@ class SocketManager {
     socket
       .on("send_message", this.handleSendMessage.bind(this))
       .on("message_status", this.handleMessageStatusChange.bind(this))
+      .on("user_typing", this.handleUserTyping.bind(this))
       .on("disconnect", this.handleDisconnect.bind(this, socket));
     //   .on("join_group", this.handleJoinGroup.bind(this, socket))
     //   .on("leave_group", this.handleLeaveGroup.bind(this, socket))
@@ -273,6 +298,20 @@ class SocketManager {
       })
     );
   }
+
+  private handleUserTyping = async (
+    chatId: string,
+    userId: string,
+    isTyping: boolean
+  ) => {
+    await this.pub.publish(
+      `u:${userId}`,
+      JSON.stringify({
+        chatId,
+        isTyping,
+      })
+    );
+  };
   //   private async handleJoinGroup(
   //     socket: IOSocket,
   //     groupId: string,

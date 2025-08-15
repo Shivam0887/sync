@@ -1,10 +1,20 @@
 import type { Message } from "@/types/chat.types";
+import type { EmojiClickData } from "emoji-picker-react";
 
 import { nanoid } from "nanoid";
-import { useEffect, useRef, useState } from "react";
-import { Smile, Paperclip, Image, Mic, Send } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useSocket } from "@/providers/socket-provider";
+
+import { Button } from "@/components/ui/button";
+import { Smile, Paperclip, Image, Mic } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import Loader from "@/components/loader";
+
+import useDebounceValue from "@/hooks/use-debounce-value";
 
 const MAX_ROWS = 5;
 
@@ -15,6 +25,8 @@ interface ChatInputProps {
   conversationType: "direct" | "group";
 }
 
+const Picker = lazy(() => import("@/components/emoji-picker"));
+
 const ChatInput = ({
   chatId,
   userId,
@@ -22,16 +34,37 @@ const ChatInput = ({
   conversationType,
 }: ChatInputProps) => {
   const [content, setContent] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [textareaClientHeight, setTextareaClientHeight] = useState(0); // Initial textarea client height
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const cursorPosRef = useRef<number | null>(null);
 
-  const { sendMessage } = useSocket();
+  const { sendMessage, onUserTyping } = useSocket();
+
+  const [isTyping, setIsTyping] = useDebounceValue(false, 1000, {
+    leading: true,
+  });
 
   useEffect(() => {
     if (textareaRef.current) {
       setTextareaClientHeight(textareaRef.current.clientHeight);
     }
   }, []);
+
+  useEffect(() => {
+    if (cursorPosRef.current !== null && textareaRef.current) {
+      textareaRef.current.setSelectionRange(
+        cursorPosRef.current,
+        cursorPosRef.current
+      );
+      cursorPosRef.current = null; // Reset
+    }
+  }, [content]);
+
+  useEffect(() => {
+    if (conversationType === "direct" && receiverId) {
+      onUserTyping(chatId, receiverId, isTyping);
+    }
+  }, [conversationType, receiverId, chatId, isTyping, onUserTyping]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,7 +89,9 @@ const ChatInput = ({
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const elem = e.target;
+
     setContent(elem.value);
+    setIsTyping((prev) => !prev);
 
     const currentRows = elem.scrollHeight / textareaClientHeight;
 
@@ -67,29 +102,51 @@ const ChatInput = ({
         : `${MAX_ROWS * textareaClientHeight}px`;
   };
 
+  const handleEmojiClick = async (emojiObject: EmojiClickData) => {
+    const emoji = emojiObject.emoji;
+
+    if (textareaRef.current) {
+      const textarea = textareaRef.current;
+
+      const prevIndex = textarea.selectionStart;
+      const nextIndex = textarea.selectionEnd;
+
+      setContent(
+        (prev) => prev.slice(0, prevIndex) + emoji + prev.slice(nextIndex)
+      );
+
+      cursorPosRef.current = prevIndex + emoji.length;
+    }
+  };
+
+  const onOpenChange = async (open: boolean) => {
+    if (!open && textareaRef.current) {
+      const textarea = textareaRef.current;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      textarea.focus();
+    }
+  };
+
   return (
     <div className="w-full shadow border rounded-xl overflow-hidden ">
       <form onSubmit={handleSubmit} className="relative bg-sidebar flex gap-3">
-        {/* Content */}
         <div className="relative p-2 pb-3 w-full flex items-end gap-2">
           <div className="relative flex-1 flex gap-2 items-end">
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="rounded-lg h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-white/10 relative group"
+              className="rounded-lg h-9 w-9 relative group"
             >
               <Paperclip size={18} />
-              <span className="absolute inset-0 rounded-lg bg-white/8 opacity-0 group-hover:opacity-100 transition-opacity"></span>
             </Button>
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="rounded-lg h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-white/10 relative group"
+              className="rounded-lg h-9 w-9 relative group"
             >
               <Image size={18} />
-              <span className="absolute inset-0 rounded-lg bg-white/8 opacity-0 group-hover:opacity-100 transition-opacity"></span>
             </Button>
 
             <div className="has-[>textarea:focus]:ring-2 ring-ring min-h-12 w-full rounded-xl self-center flex border border-muted-foreground/50 items-center py-1">
@@ -111,35 +168,32 @@ const ChatInput = ({
               />
             </div>
 
+            <Popover onOpenChange={onOpenChange}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-lg h-9 w-9"
+                >
+                  <Smile size={18} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0 md:w-96 w-72 min-h-[450px]">
+                <Suspense
+                  fallback={<Loader className="md:w-96 w-72 min-h-[450px]" />}
+                >
+                  <Picker onEmojiClick={handleEmojiClick} />
+                </Suspense>
+              </PopoverContent>
+            </Popover>
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="rounded-lg h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-white/8"
-            >
-              <Smile size={18} />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="rounded-lg h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-white/10 relative group"
+              className="rounded-lg h-9 w-9 relative group"
             >
               <Mic size={18} />
-              <span className="absolute inset-0 rounded-lg bg-white/8 opacity-0 group-hover:opacity-100 transition-opacity"></span>
-            </Button>
-
-            <Button
-              type="submit"
-              size="icon"
-              className="rounded-lg h-10 w-10 relative overflow-hidden disabled:opacity-50 disabled:pointer-events-none"
-              disabled={!content.trim()}
-            >
-              <div className="absolute inset-0 bg-noise opacity-15"></div>
-              <Send size={18} className="relative z-10 ml-0.5 -mt-0.5" />
-              {content.trim() && (
-                <span className="absolute inset-0 bg-white/15 animate-pulse"></span>
-              )}
             </Button>
           </div>
         </div>

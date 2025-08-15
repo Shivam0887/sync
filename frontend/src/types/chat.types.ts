@@ -1,5 +1,3 @@
-import type { Socket } from "socket.io-client";
-
 export type MessageStatus =
   | "SENDING"
   | "SENT"
@@ -56,6 +54,9 @@ export type Conversation = IConversationBase &
 export interface IChatState {
   conversation: { [id: string]: Conversation };
   chat: { [chatId: string]: Message[] };
+  typingStatus: {
+    [chatId: string]: { [userId: string]: boolean };
+  };
   isCoversationLoading: boolean;
   isChatMessagesLoading: boolean;
 }
@@ -71,6 +72,11 @@ export interface IChatActions {
     status: MessageStatus
   ) => void;
   updateMessageId: (chatId: string, tempId: string, newId: string) => void;
+  updateTypingStatus: (
+    chatId: string,
+    userId: string,
+    isTyping: boolean
+  ) => void;
   setLoading: (
     loadType: "conversation" | "messages",
     isLoading: boolean
@@ -83,33 +89,3 @@ export interface IChatActions {
   // Utility
   clearChat: () => void;
 }
-
-export type SocketConnectionStatus =
-  | "connected"
-  | "disconnected"
-  | "reconnecting";
-
-export interface ClientToServerEvents {
-  send_message: (
-    chatId: string,
-    message: Omit<Message, "status">,
-    cb: (msg: { tempId: string; newId: string }) => void
-  ) => void;
-  message_status: (
-    senderId: string,
-    chatId: string,
-    messageId: string,
-    status: "READ"
-  ) => void;
-}
-
-export interface ServerToClientEvents {
-  receive_message: (chatId: string, message: Message, cb: () => void) => void;
-  message_status: (
-    chatId: string,
-    messageId: string,
-    status: "DELIVERED" | "READ"
-  ) => void;
-}
-
-export type IOSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
