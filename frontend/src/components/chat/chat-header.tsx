@@ -1,11 +1,14 @@
-import type { Conversation } from "@/types/chat.types";
+import type { Conversation, IParticipant } from "@/types/chat.types";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Menu, Search, Phone, Video, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ProfileInfo } from "./profile-info";
 import { GroupInfo } from "./group-info";
+import { useUserActions, useUserPresence } from "@/stores/chat-store";
+import { apiRequest } from "@/services/api-request";
+import { formatLastSeen } from "@/lib/utils";
 
 type ChatHeaderProps = {
   toggleSidebar: () => void;
@@ -13,22 +16,20 @@ type ChatHeaderProps = {
   userId: string;
 };
 
+const userPresenceSet = new Set<string>(); // Keep track of user presence so we can fetch only once
+
 const ChatHeader = ({
   toggleSidebar,
   userId,
   conversationData,
 }: ChatHeaderProps) => {
   const [openProfile, setOpenProfile] = useState(false);
+  const { updateUserPresence } = useUserActions();
 
   let avatarUrl = "";
   let name = "";
 
-  let otherUser: {
-    id: string;
-    username: string;
-    avatarUrl: string | null;
-    role: "admin" | "member";
-  } | null = null;
+  let otherUser: IParticipant | null = null;
 
   if (conversationData.type === "direct") {
     otherUser =
@@ -42,6 +43,30 @@ const ChatHeader = ({
     avatarUrl = conversationData.avatarUrl ?? "";
     name = conversationData.name;
   }
+
+  const otherUserId = otherUser?.id ?? "";
+  const presence = useUserPresence(otherUserId);
+
+  useEffect(() => {
+    const fetchUserPresence = async (userId: string) => {
+      try {
+        const response = await apiRequest(`/chat/${userId}/presence`);
+        if (!response.ok) throw new Error("[User Presence] error");
+        const { data } = await response.json();
+
+        if (data) {
+          userPresenceSet.add(userId);
+          updateUserPresence(data.userId, data.status, data.lastSeen);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    if (otherUserId && !userPresenceSet.has(otherUserId)) {
+      fetchUserPresence(otherUserId);
+    }
+  }, [otherUserId, updateUserPresence]);
 
   const handleProfileClick = () => {
     setOpenProfile(!openProfile);
@@ -75,7 +100,14 @@ const ChatHeader = ({
           </div>
           <div className="ml-3 hidden sm:block">
             <div className="font-medium capitalize">{name}</div>
-            <span className="text-xs">Active now</span>
+            {presence && (
+              <span className="text-xs">
+                {presence.status === "offline" &&
+                Date.now() - new Date(presence.lastSeen).getTime() > 60000
+                  ? formatLastSeen(presence.lastSeen)
+                  : presence.status}
+              </span>
+            )}
           </div>
         </div>
       </div>

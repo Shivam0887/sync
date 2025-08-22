@@ -5,6 +5,13 @@ import { env } from "@/config/env.js";
 import redis from "@/config/redis-db.js";
 import z from "zod";
 import { v7 as uuidv7 } from "uuid";
+import { db } from "@/db/index.js";
+import {
+  chatParticipantsTable,
+  chatsTable,
+  userStatusTable,
+} from "@/db/schema.js";
+import { and, eq, sql } from "drizzle-orm";
 
 const payloadSchema = z.object({
   chatId: z.string(),
@@ -14,16 +21,37 @@ const payloadSchema = z.object({
   isTyping: z.boolean().optional(),
 });
 
+interface PresenceStatus {
+  userId: string;
+  status: "online" | "away" | "offline";
+  lastSeen: Date;
+  socketCount: number; // Multiple devices/tabs
+}
+
+type PresenceUpdate = Omit<PresenceStatus, "socketCount">;
+
+const HOST = "http://localhost";
+
 class SocketManager {
   private ioInstance: IOServer;
-  private readonly sub = redis;
+  private readonly sub = redis.duplicate();
   private readonly pub = redis.duplicate();
 
   private readonly userToSockets = new Map<string, Set<string>>();
   private readonly socketToUser = new Map<string, string>();
-  private readonly groupToUsersLocal = new Map<string, Set<string>>();
+
   private readonly subscribedUserIds = new Set<string>();
   private readonly subscribedGroupIds = new Set<string>();
+
+  private userPresence = new Map<string, PresenceStatus>();
+  private presenceUpdateQueue = new Map<string, PresenceUpdate>();
+  private batchTimer: NodeJS.Timeout | undefined = undefined;
+
+  // Config
+  private readonly BATCH_INTERVAL = 5000; // 5 seconds
+  private readonly OFFLINE_THRESHOLD = 30000; // 30 seconds
+  private readonly AWAY_THRESHOLD = 60000; // 1 minute
+
   private redisListenerInitialized = false;
 
   constructor(httpServer: HttpServer) {
@@ -35,34 +63,45 @@ class SocketManager {
 
     this.initializeRedisListener();
     this.setupConnectionHandling();
+
+    this.startPeriodicCleanup();
+    this.startBatchProcessor();
   }
 
   private initializeRedisListener() {
     if (this.redisListenerInitialized) return;
     this.redisListenerInitialized = true;
 
+    this.sub.subscribe("presence_updates"); // TODO: Unsub
+
     this.sub.on("message", async (channel: string, raw: string) => {
       try {
         const parsed = JSON.parse(raw);
-        const { chatId, message, status, messageId, isTyping } =
-          payloadSchema.parse(parsed);
 
-        if (channel.startsWith("u:")) {
-          const targetUserId = channel.slice(2);
-
-          if (message && isTyping === undefined) {
-            await this.onIncomingUserMessage(targetUserId, chatId, message);
-          } else if (!message && isTyping !== undefined) {
-            await this.onUserTyping(chatId, targetUserId, isTyping);
-          }
-        } else if (channel.startsWith("g:") && message) {
-          const groupId = channel.slice(2);
-          await this.onIncomingGroupMessage(groupId, message);
-        } else if (channel.startsWith("ack:") && status && messageId) {
-          const senderUserId = channel.slice(4);
-          await this.onIncomingAck(senderUserId, chatId, messageId, status);
+        if (channel === "presence_updates") {
+          const { userId, status, lastSeen } = parsed;
+          this.broadcastPresenceUpdate(userId, status, lastSeen);
         } else {
-          console.warn("Unknown redis channel:", channel);
+          const { chatId, message, status, messageId, isTyping } =
+            payloadSchema.parse(parsed);
+
+          if (channel.startsWith("u:")) {
+            const targetUserId = channel.slice(2);
+
+            if (message && isTyping === undefined) {
+              await this.onIncomingUserMessage(targetUserId, chatId, message);
+            } else if (!message && isTyping !== undefined) {
+              await this.onUserTyping(chatId, targetUserId, isTyping);
+            }
+          } else if (channel.startsWith("g:") && message) {
+            const groupId = channel.slice(2);
+            await this.onIncomingGroupMessage(groupId, message);
+          } else if (channel.startsWith("ack:") && status && messageId) {
+            const senderUserId = channel.slice(4);
+            await this.onIncomingAck(senderUserId, chatId, messageId, status);
+          } else {
+            console.warn("Unknown redis channel:", channel);
+          }
         }
       } catch (err) {
         console.error("Failed to handle Redis message", err, raw);
@@ -76,14 +115,192 @@ class SocketManager {
         const userId = socket.handshake.auth.userId;
         if (!userId) throw new Error("Missing userId");
 
-        this.trackSocketConnection(socket.id, userId);
-        await this.subscribeUserId(userId); // Subscribe to user channels
+        this.trackSocketConnection(socket.id, userId); // Map userId -> socketId and vice-versa
         this.setupSocketHandlers(socket); // Set up event handlers for the socket
+
+        await this.subscribeUserId(userId); // Subscribe to user channels
+        this.setupGroupSubscriptions(userId); // Update presence to online
+
+        await this.updatePresence(userId, "online", new Date());
       } catch (err) {
         console.error("Connection error:", err);
         socket.disconnect();
       }
     });
+  }
+
+  private async updatePresence(
+    userId: string,
+    status: PresenceStatus["status"],
+    lastSeen: Date
+  ) {
+    const presence: PresenceStatus = {
+      userId,
+      status,
+      lastSeen,
+      socketCount: this.userToSockets.get(userId)?.size || 0,
+    };
+
+    this.pub.publish(
+      "presence_updates",
+      JSON.stringify({ userId, status, lastSeen: lastSeen.toISOString() })
+    );
+
+    this.userPresence.set(userId, presence);
+
+    // Cache in Redis with TTL
+    await redis.setex(
+      `presence:${userId}`,
+      300, // 5 minutes TTL
+      JSON.stringify({ status, lastSeen: lastSeen.toISOString() })
+    );
+
+    // Queue for batch database update
+    this.queuePresenceUpdate(userId, status, lastSeen);
+  }
+
+  private queuePresenceUpdate(
+    userId: string,
+    status: PresenceStatus["status"],
+    lastSeen: Date
+  ) {
+    this.presenceUpdateQueue.set(userId, { userId, status, lastSeen });
+  }
+
+  private startBatchProcessor() {
+    this.batchTimer = setInterval(() => {
+      this.processBatchUpdates();
+    }, this.BATCH_INTERVAL);
+  }
+
+  private async processBatchUpdates() {
+    if (this.presenceUpdateQueue.size === 0) return;
+
+    const updates = Array.from(this.presenceUpdateQueue.values());
+    this.presenceUpdateQueue.clear();
+
+    try {
+      // Batch update database
+      await db
+        .insert(userStatusTable)
+        .values(updates)
+        .onConflictDoUpdate({
+          target: userStatusTable.userId,
+          set: {
+            status: sql`excluded.status`,
+            lastSeen: sql`excluded.last_seen`,
+          },
+        });
+    } catch (error) {
+      console.error("Failed to batch update presence:", error);
+      // Re-queue failed updates
+      updates.forEach((update) => {
+        this.presenceUpdateQueue.set(update.userId, update);
+      });
+    }
+  }
+
+  private startPeriodicCleanup() {
+    this.batchTimer = setInterval(() => {
+      this.cleanupStalePresence();
+      this.updateAwayStatus();
+    }, 60000); // Every minute
+  }
+
+  private cleanupStalePresence() {
+    const now = Date.now();
+
+    for (const [userId, presence] of this.userPresence.entries()) {
+      const timeSinceLastSeen = now - presence.lastSeen.getTime();
+
+      // Mark as offline if no activity and no sockets
+      if (
+        timeSinceLastSeen > this.OFFLINE_THRESHOLD &&
+        presence.socketCount === 0
+      ) {
+        this.updatePresence(userId, "offline", presence.lastSeen);
+      }
+    }
+  }
+
+  private updateAwayStatus() {
+    const now = Date.now();
+
+    for (const [userId, presence] of this.userPresence.entries()) {
+      const timeSinceLastSeen = now - presence.lastSeen.getTime();
+
+      // Mark as away if online but inactive
+      if (
+        presence.status === "online" &&
+        timeSinceLastSeen > this.AWAY_THRESHOLD &&
+        presence.socketCount > 0
+      ) {
+        this.updatePresence(userId, "away", presence.lastSeen);
+      }
+    }
+  }
+
+  private async broadcastPresenceUpdate(
+    userId: string,
+    status: PresenceStatus["status"],
+    lastSeen: string
+  ) {
+    // Get user's contacts/groups that should receive presence updates
+    const subscribers = await this.getPresenceSubscribers(userId);
+    // Broadcast to subscribers
+    for (const { userId: id } of subscribers) {
+      if (userId === id) continue;
+
+      const sockets = this.userToSockets.get(id);
+      if (!sockets) continue;
+
+      sockets.forEach((socketId) => {
+        const socket = this.ioInstance.sockets.sockets.get(socketId);
+
+        if (socket) {
+          socket.emit("presence_updates", userId, status, lastSeen);
+        } else {
+          this.cleanupSocket(socketId);
+        }
+      });
+    }
+  }
+
+  private async getPresenceSubscribers(userId: string): Promise<
+    {
+      userId: string;
+    }[]
+  > {
+    // Return users who should receive this user's presence updates
+    let result = await redis.get(`u:contacts:${userId}`);
+    if (result) return JSON.parse(result);
+
+    const cpt = db
+      .select()
+      .from(chatParticipantsTable)
+      .where(eq(chatParticipantsTable.userId, userId))
+      .as("cpt");
+
+    const dbResult = await db
+      .select({ userId: chatParticipantsTable.userId })
+      .from(cpt)
+      .innerJoin(
+        chatsTable,
+        and(eq(chatsTable.id, cpt.chatId), eq(chatsTable.type, "direct"))
+      )
+      .innerJoin(
+        chatParticipantsTable,
+        eq(chatParticipantsTable.chatId, chatsTable.id)
+      );
+
+    await redis.set(
+      `u:contacts:${userId}`,
+      JSON.stringify(dbResult),
+      "EX",
+      3600
+    );
+
+    return dbResult; // Placeholder
   }
 
   private trackSocketConnection(socketId: string, userId: string) {
@@ -93,6 +310,40 @@ class SocketManager {
       this.userToSockets.set(userId, new Set());
     }
     this.userToSockets.get(userId)!.add(socketId);
+  }
+
+  private async setupGroupSubscriptions(userId: string) {
+    try {
+      const response = await fetch(
+        `${HOST}:${env.PORT}/api/chat/groups/${userId}`
+      );
+
+      if (!response.ok) throw new Error("Failed to getUserGroups");
+
+      const { data } = await response.json();
+
+      if (Array.isArray(data)) {
+        for (const groupId of data) {
+          await this.subscribeGroupId(groupId);
+        }
+
+        await this.handleJoinGroup(data, [userId]);
+      }
+    } catch (error) {
+      console.error("[setupGroupSubscriptions] error:", error);
+    }
+  }
+
+  private setupSocketHandlers(socket: IOSocket) {
+    socket
+      .on("send_message", this.handleSendMessage.bind(this))
+      .on("message_status", this.handleMessageStatusChange.bind(this))
+      .on("user_typing", this.handleUserTyping.bind(this))
+      .on("disconnect", (reason) =>
+        this.handleDisconnect.call(this, reason, socket)
+      )
+      .on("join_group", this.handleJoinGroup.bind(this))
+      .on("leave_group", this.handleLeaveGroup.bind(this));
   }
 
   private async subscribeUserId(userId: string) {
@@ -133,9 +384,6 @@ class SocketManager {
   }
 
   private async unsubscribeGroupId(groupId: string) {
-    const users = this.groupToUsersLocal.get(groupId);
-    if (users && users.size > 0) return;
-
     const channel = `g:${groupId}`;
     if (this.subscribedGroupIds.has(groupId)) {
       await this.sub.unsubscribe(channel);
@@ -150,6 +398,8 @@ class SocketManager {
   ) {
     const sockets = this.userToSockets.get(userId);
     if (!sockets) return; // User is not connected -> Offline
+
+    this.updatePresence(message.senderId, "online", new Date());
 
     let ackCount = 0;
 
@@ -189,25 +439,15 @@ class SocketManager {
     }
   }
 
-  private async onIncomingGroupMessage(chatId: string, message: IMessage) {
-    const members = this.groupToUsersLocal.get(chatId);
-    if (!members) return;
+  private async onIncomingGroupMessage(groupId: string, message: IMessage) {
+    const senderSockets = this.userToSockets.get(message.senderId);
 
-    for (const userId of members) {
-      if (userId === message.senderId) continue;
+    this.updatePresence(message.senderId, "online", new Date());
 
-      const sockets = this.userToSockets.get(userId);
-      if (!sockets) continue; // User is not connected -> Offline
-
-      for (const socketId of sockets) {
-        const socket = this.ioInstance.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.emit("receive_message", chatId, message, () => {});
-        } else {
-          this.cleanupSocket(socketId);
-        }
-      }
-    }
+    this.ioInstance
+      .to(groupId)
+      .except(senderSockets ? Array.from(senderSockets) : [])
+      .emit("receive_message", groupId, message, () => {});
   }
 
   private async onIncomingAck(
@@ -245,16 +485,6 @@ class SocketManager {
         this.cleanupSocket(socketId);
       }
     }
-  }
-
-  private setupSocketHandlers(socket: IOSocket) {
-    socket
-      .on("send_message", this.handleSendMessage.bind(this))
-      .on("message_status", this.handleMessageStatusChange.bind(this))
-      .on("user_typing", this.handleUserTyping.bind(this))
-      .on("disconnect", this.handleDisconnect.bind(this, socket));
-    //   .on("join_group", this.handleJoinGroup.bind(this, socket))
-    //   .on("leave_group", this.handleLeaveGroup.bind(this, socket))
   }
 
   private async handleSendMessage(
@@ -312,54 +542,56 @@ class SocketManager {
       })
     );
   };
-  //   private async handleJoinGroup(
-  //     socket: IOSocket,
-  //     groupId: string,
-  //     ack: (response: { ok: boolean; error?: string }) => void
-  //   ) {
-  //     try {
-  //       const userId = this.socketToUser.get(socket.id);
-  //       if (!userId) throw new Error("User not identified");
 
-  //       if (!this.groupToUsersLocal.has(groupId)) {
-  //         this.groupToUsersLocal.set(groupId, new Set());
-  //       }
-  //       this.groupToUsersLocal.get(groupId)!.add(userId);
+  async handleJoinGroup(groupIds: string[], userIds: string[]) {
+    try {
+      for (const userId of userIds) {
+        const sockets = this.userToSockets.get(userId);
+        if (!sockets) continue;
 
-  //       await this.subscribeGroupChannel(groupId);
-  //       ack({ ok: true });
-  //     } catch (err) {
-  //       ack({ ok: false, error: err.message });
-  //     }
-  //   }
+        for (const socketId of sockets) {
+          this.ioInstance.in(socketId).socketsJoin(groupIds);
+        }
+      }
+    } catch (err) {
+      console.error("[Join group error]", err);
+    }
+  }
 
-  //   private async handleLeaveGroup(
-  //     socket: IOSocket,
-  //     groupId: string,
-  //     ack: (response: { ok: boolean; error?: string }) => void
-  //   ) {
-  //     try {
-  //       const userId = this.socketToUser.get(socket.id);
-  //       if (!userId) throw new Error("User not identified");
+  async handleLeaveGroup(groupId: string, userId: string) {
+    try {
+      const sockets = this.userToSockets.get(userId);
+      if (!sockets) return;
 
-  //       const members = this.groupToUsersLocal.get(groupId);
-  //       if (members) {
-  //         members.delete(userId);
-  //         if (members.size === 0) {
-  //           this.groupToUsersLocal.delete(groupId);
-  //           await this.unsubscribeGroupChannel(groupId);
-  //         }
-  //       }
-  //       ack({ ok: true });
-  //     } catch (err) {
-  //       ack({ ok: false, error: err.message });
-  //     }
-  //   }
+      for (const socketId of sockets) {
+        this.ioInstance.in(socketId).socketsLeave(groupId);
+      }
 
-  private async handleDisconnect(socket: IOSocket, reason: string) {
-    console.log("Socket disconnected:", socket.id);
+      // return all Socket instances in the "groupId" room of the main namespace
+      const members = await this.ioInstance.in(groupId).fetchSockets();
+
+      if (members.length === 0) {
+        await this.unsubscribeGroupId(groupId);
+      }
+    } catch (err) {
+      console.error("[Leave group error]", err);
+    }
+  }
+
+  private async handleDisconnect(reason: string, socket: IOSocket) {
+    console.log("Socket disconnected:", socket.id, reason);
+
+    const connectedClients = await this.ioInstance.fetchSockets();
+
+    if (connectedClients.length === 0) {
+      clearInterval(this.batchTimer);
+      this.sub.unsubscribe("presence_updates");
+    }
+
     const userId = this.socketToUser.get(socket.id);
     if (!userId) return;
+
+    await this.updatePresence(userId, "offline", new Date());
 
     this.cleanupSocket(socket.id);
 
@@ -368,14 +600,14 @@ class SocketManager {
       await this.unsubscribeUserId(userId);
     }
 
-    // Clean group subscriptions
-    for (const [groupId, members] of this.groupToUsersLocal) {
-      if (members.has(userId)) {
-        members.delete(userId);
-        if (members.size === 0) {
-          this.groupToUsersLocal.delete(groupId);
-          await this.unsubscribeGroupId(groupId);
-        }
+    const groups = Array.from(socket.rooms);
+
+    for (const groupId of groups) {
+      // return all Socket instances in the "groupId" room of the main namespace
+      const members = await this.ioInstance.in(groupId).fetchSockets();
+
+      if (members.length === 0) {
+        await this.unsubscribeGroupId(groupId);
       }
     }
   }
@@ -409,3 +641,5 @@ export default function initializeSocketManager(
   }
   return socketManagerInstance.io;
 }
+
+export const getSocketManagerInstance = () => socketManagerInstance;

@@ -5,6 +5,15 @@ export type MessageStatus =
   | "READ"
   | "FAILED";
 
+export type UserPresence = "online" | "offline" | "away";
+
+export interface IParticipant {
+  id: string;
+  username: string;
+  avatarUrl: string | null;
+  role: "admin" | "member";
+}
+
 export interface IMessageBase {
   id: string;
   content: string;
@@ -29,12 +38,7 @@ export interface IConversationBase {
   unread: number;
   lastMessage: string;
   timestamp: Date | null;
-  participants: {
-    id: string;
-    username: string;
-    avatarUrl: string | null;
-    role: "admin" | "member";
-  }[];
+  participants: IParticipant[];
 }
 
 export type Conversation = IConversationBase &
@@ -54,6 +58,12 @@ export type Conversation = IConversationBase &
 export interface IChatState {
   conversation: { [id: string]: Conversation };
   chat: { [chatId: string]: Message[] };
+  userPresence: {
+    [userId: string]: {
+      status: UserPresence;
+      lastSeen: string;
+    } | null;
+  };
   typingStatus: {
     [chatId: string]: { [userId: string]: boolean };
   };
@@ -66,6 +76,8 @@ export interface IChatActions {
   setConversations: (conversations: Conversation[]) => void;
   setChat: (chatId: string, messages: Message[]) => void;
   addMessage: (chatId: string, message: Message) => void;
+  addMembers: (chatId: string, members: IParticipant[]) => void;
+  removeMembers: (chatId: string, members: string[]) => void;
   updateMessageStatus: (
     chatId: string,
     messageId: string,
@@ -76,6 +88,11 @@ export interface IChatActions {
     chatId: string,
     userId: string,
     isTyping: boolean
+  ) => void;
+  updateUserPresence: (
+    userId: string,
+    status: UserPresence,
+    lastSeen: string
   ) => void;
   setLoading: (
     loadType: "conversation" | "messages",

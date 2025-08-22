@@ -20,6 +20,12 @@ export const messageStatusEnum = pgEnum("message_status", [
 
 export const chatTypeEnum = pgEnum("chat_type", ["direct", "group"]);
 
+export const userPresenceEnum = pgEnum("presence_type", [
+  "online",
+  "offline",
+  "away",
+]);
+
 export const usersTable = pgTable(
   "users",
   {
@@ -117,3 +123,11 @@ export const groupInviteLinksTable = pgTable(
   },
   (t) => [index("idx_group_invite_links_chat_id_token").on(t.chatId, t.token)]
 );
+
+export const userStatusTable = pgTable("user_status", {
+  userId: uuid()
+    .primaryKey()
+    .references(() => usersTable.id, { onDelete: "cascade" }),
+  status: userPresenceEnum().default("away").notNull(),
+  lastSeen: timestamp().notNull(),
+});

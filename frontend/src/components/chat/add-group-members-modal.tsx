@@ -15,8 +15,9 @@ import { toastErrorHandler } from "@/lib/utils";
 import { useOutletContext } from "react-router";
 import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import type { IUser } from "@/layouts/chat.layout";
 import { apiRequest } from "@/services/api-request";
+import { useChatActions } from "@/stores/chat-store";
+import type { IParticipant } from "@/types/chat.types";
 
 interface AddGroupMembersDialogProps {
   groupId: string;
@@ -28,17 +29,22 @@ const AddGroupMembersDialog = ({
   existingMembers,
 }: AddGroupMembersDialogProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
 
-  const { allUsers: users } = useOutletContext<{ allUsers: IUser }>();
+  const { addMembers } = useChatActions();
+
+  const { allUsers: users } = useOutletContext<{ allUsers: IParticipant[] }>();
 
   const existingMembersRef = useRef<Set<string>>(new Set(existingMembers));
 
   const handleUserToggle = (id: string) => {
-    setSelectedUsers((prev) =>
-      prev.includes(id) ? prev.filter((uid) => uid !== id) : [...prev, id]
-    );
+    const newSelectedUsers = new Set(selectedUsers);
+
+    if (newSelectedUsers.has(id)) newSelectedUsers.delete(id);
+    else newSelectedUsers.add(id);
+
+    setSelectedUsers(newSelectedUsers);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,12 +53,16 @@ const AddGroupMembersDialog = ({
     try {
       const res = await apiRequest(`/chat/groups/${groupId}/add`, {
         method: "POST",
-        body: JSON.stringify({ userIds: selectedUsers }),
+        body: JSON.stringify({ userIds: Array.from(selectedUsers) }),
       });
 
       if (!res.ok) throw new Error("Failed to add members");
-
       toast.success("Users added successfully");
+
+      addMembers(
+        groupId,
+        users.filter(({ id }) => selectedUsers.has(id))
+      );
       setIsOpen(false);
     } catch (error) {
       toastErrorHandler({ error });
@@ -102,7 +112,7 @@ const AddGroupMembersDialog = ({
                   <Input
                     disabled={existingMembersRef.current.has(u.id)}
                     type="checkbox"
-                    checked={selectedUsers.includes(u.id)}
+                    checked={selectedUsers.has(u.id)}
                     onChange={() => handleUserToggle(u.id)}
                     className="size-4"
                   />
@@ -110,10 +120,7 @@ const AddGroupMembersDialog = ({
               ))}
             </div>
           </div>
-          <Button
-            type="submit"
-            disabled={loading || selectedUsers.length === 0}
-          >
+          <Button type="submit" disabled={loading || selectedUsers.size === 0}>
             {loading ? "Adding..." : "Add Members"}
           </Button>
         </form>

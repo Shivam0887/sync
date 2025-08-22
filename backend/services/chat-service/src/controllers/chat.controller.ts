@@ -1,21 +1,26 @@
+import { randomBytes } from "crypto";
+import z from "zod";
+import redis from "@/config/redis-db.js";
 import { db } from "@/db/index.js";
+
 import {
   chatsTable,
   chatParticipantsTable,
   messagesTable,
   usersTable,
   groupInviteLinksTable,
+  userStatusTable,
 } from "@/db/schema.js";
-import { eq, and, inArray, desc, sql } from "drizzle-orm";
+
+import { eq, and, inArray, sql, isNull, isNotNull } from "drizzle-orm";
+
 import { Request, Response, NextFunction } from "express";
 import {
   NotFoundError,
   ConflictError,
-  ValidationError,
   AuthorizationError,
 } from "@shared/dist/error-handler/index.js";
-import { randomBytes } from "crypto";
-import z from "zod";
+import { getSocketManagerInstance } from "@/socket/socket-manager.js";
 
 const groupSchema = z.object({
   name: z
@@ -86,7 +91,12 @@ export const getConversations = async (
       })
       .from(chatParticipantsTable)
       .innerJoin(usersTable, eq(usersTable.id, chatParticipantsTable.userId))
-      .where(inArray(chatParticipantsTable.chatId, chatIds));
+      .where(
+        and(
+          inArray(chatParticipantsTable.chatId, chatIds),
+          isNull(chatParticipantsTable.leftAt)
+        )
+      );
 
     const participants = await participantsQuery;
 
@@ -211,7 +221,7 @@ export const createOrGetDirectChat = async (
         .where(eq(chatParticipantsTable.chatId, chat.chatId));
 
       if (participants.some((p) => p.userId === otherUserId))
-        throw new ConflictError("Converation already exists");
+        throw new ConflictError("Conversation already exists");
     }
 
     // Create new chat
@@ -244,7 +254,7 @@ export const sendMessage = async (
 
     // If no chatId, create or get direct chat
     if (!chatId && receiverId) {
-      const result = await createOrGetDirectChat(
+      await createOrGetDirectChat(
         { ...req, body: { otherUserId: receiverId } } as any,
         {
           json: (data: any) => {
@@ -272,7 +282,7 @@ export const sendMessage = async (
     // Insert message
     const [message] = await db
       .insert(messagesTable)
-      .values({ chatId: chatIdToUse, senderId: userId, content })
+      .values({ chatId: chatIdToUse, senderId: userId, content, id: "" }) // TODO: Update with real id
       .returning();
 
     res.json({ message });
@@ -325,6 +335,24 @@ export const createGroup = async (
       createdBy: userId,
     });
 
+    const SocketManager = getSocketManagerInstance();
+    await SocketManager.handleJoinGroup([chat.id], userIds);
+    await Promise.all(
+      userIds.map(async (userId) => {
+        const result = await redis.get(`ug:${userId}`);
+        const cachedUserGroups: string[] = result ? JSON.parse(result) : [];
+
+        cachedUserGroups.push(chat.id);
+        await redis.set(
+          `ug:${userId}`,
+          JSON.stringify(cachedUserGroups),
+          "EX",
+          3600,
+          "NX"
+        );
+      })
+    );
+
     res
       .status(201)
       .json({ groupId: chat.id, inviteLink: `/groups/join/${token}` });
@@ -359,17 +387,74 @@ export const addGroupMembers = async (
       throw new AuthorizationError("Only admins can add members");
     }
 
-    // Add users as members
-    const newMembers = userIds.map((id: string) => ({
-      chatId: groupId,
+    const members = userIds.map((id) => ({
       userId: id,
+      chatId: groupId,
       role: "member",
     }));
 
-    await db.insert(chatParticipantsTable).values(newMembers);
+    await db
+      .insert(chatParticipantsTable)
+      .values(members)
+      .onConflictDoUpdate({
+        target: [chatParticipantsTable.chatId, chatParticipantsTable.userId],
+        set: { leftAt: null },
+        setWhere: sql`left_at IS NOT NULL`,
+      });
+
+    const SocketManager = getSocketManagerInstance();
+    await SocketManager.handleJoinGroup([groupId], userIds);
+
+    await Promise.all(
+      userIds.map(async (userId) => {
+        const result = await redis.get(`ug:${userId}`);
+        const cachedUserGroups: string[] = result ? JSON.parse(result) : [];
+
+        cachedUserGroups.push(groupId);
+        await redis.set(`ug:${userId}`, JSON.stringify(cachedUserGroups), "XX");
+      })
+    );
 
     res.status(200).json({ added: userIds });
   } catch (error) {
+    next(error);
+  }
+};
+
+export const removeGroupMembers = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { groupId } = req.params;
+    const user = (req as any).user;
+
+    await db
+      .update(chatParticipantsTable)
+      .set({ leftAt: new Date() })
+      .where(
+        and(
+          eq(chatParticipantsTable.chatId, groupId),
+          eq(chatParticipantsTable.userId, user.id)
+        )
+      );
+
+    const SocketManager = getSocketManagerInstance();
+    await SocketManager.handleLeaveGroup(groupId, user.id);
+
+    const result = await redis.get(`ug:${user.id}`);
+    const cachedUserGroups: string[] = result ? JSON.parse(result) : [];
+
+    await redis.set(
+      `ug:${user.id}`,
+      JSON.stringify(cachedUserGroups.filter((g) => g !== groupId)),
+      "XX"
+    );
+
+    res.json({ message: `${user.id} removed from group id ${groupId}` });
+  } catch (error) {
+    console.error("[RemoveGroupMemebers] error:", error);
     next(error);
   }
 };
@@ -445,17 +530,126 @@ export const joinViaInviteLink = async (
         )
       );
 
-    if (existing.length) {
+    if (existing.length && existing[0].leftAt === null) {
       throw new ConflictError("Already a group member");
     }
 
-    await db.insert(chatParticipantsTable).values({
-      chatId: groupId,
-      userId,
-      role: "member",
-    });
+    // Re-join
+    if (existing.length && existing[0].leftAt) {
+      await db
+        .update(chatParticipantsTable)
+        .set({ leftAt: null })
+        .where(
+          and(
+            eq(chatParticipantsTable.chatId, groupId),
+            eq(chatParticipantsTable.userId, userId)
+          )
+        );
+    } else if (existing.length === 0) {
+      await db.insert(chatParticipantsTable).values({
+        chatId: groupId,
+        userId,
+        role: "member",
+      });
+    }
+
+    const SocketManager = getSocketManagerInstance();
+    await SocketManager.handleJoinGroup([groupId], [userId]);
+
+    const result = await redis.get(`ug:${userId}`);
+    const cachedUserGroups: string[] = result ? JSON.parse(result) : [];
+
+    cachedUserGroups.push(groupId);
+    await redis.set(`ug:${userId}`, JSON.stringify(cachedUserGroups), "XX");
 
     res.status(200).json({ groupId });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getUserGroups = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { userId } = req.params;
+
+    const cachedUserGroups = await redis.get(`ug:${userId}`);
+    if (cachedUserGroups) {
+      res.json({ data: JSON.parse(cachedUserGroups) });
+      return;
+    }
+
+    const query = db
+      .select({ groupId: chatsTable.id })
+      .from(chatParticipantsTable)
+      .innerJoin(chatsTable, eq(chatParticipantsTable.chatId, chatsTable.id))
+      .where(
+        and(
+          eq(chatParticipantsTable.userId, userId),
+          isNull(chatParticipantsTable.leftAt),
+          eq(chatsTable.type, "group")
+        )
+      );
+
+    const userGroups = (await query).map(({ groupId }) => groupId);
+    await redis.set(
+      `ug:${userId}`,
+      JSON.stringify(userGroups),
+      "EX",
+      3600,
+      "NX"
+    );
+
+    res.json({ data: userGroups });
+  } catch (error) {
+    console.error("[getUserGroups] error", error);
+    next(error);
+  }
+};
+
+export const getUserPresence = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const { userId } = req.params;
+
+  try {
+    // Try Redis cache
+    const cached = await redis.get(`presence:${userId}`);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      res.json({
+        data: {
+          userId,
+          status: parsed.status,
+          lastSeen: new Date(parsed.lastSeen),
+        },
+      });
+      return;
+    }
+
+    // Fallback to database
+    const dbPresence = await db
+      .select()
+      .from(userStatusTable)
+      .where(eq(userStatusTable.userId, userId));
+
+    if (dbPresence.length) {
+      res.json({
+        data: {
+          userId,
+          status: dbPresence[0].status, // Assume offline if not in cache
+          lastSeen: dbPresence[0].lastSeen,
+        },
+      });
+      return;
+    }
+
+    res.json({ data: null });
   } catch (error) {
     next(error);
   }

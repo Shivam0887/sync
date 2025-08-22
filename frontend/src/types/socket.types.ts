@@ -18,7 +18,10 @@ export interface ClientToServerEvents {
     messageId: string,
     status: "READ"
   ) => void;
+
   user_typing: (chatId: string, userId: string, isTying: boolean) => void;
+  join_group: (groupIds: string[], userIds: string[]) => void;
+  leave_group: (groupId: string, userId: string) => void;
 }
 
 export interface ServerToClientEvents {
@@ -29,6 +32,11 @@ export interface ServerToClientEvents {
     status: "DELIVERED" | "READ"
   ) => void;
   user_typing: (chatId: string, userId: string, isTying: boolean) => void;
+  presence_updates: (
+    userId: string,
+    status: "online" | "offline" | "away",
+    lastSeen: string
+  ) => void;
 }
 
 export type IOSocket = Socket<ServerToClientEvents, ClientToServerEvents>;

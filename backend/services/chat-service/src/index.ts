@@ -13,6 +13,10 @@ import initializeSocketManager from "./socket/socket-manager.js";
 const app = express();
 const httpServer = createServer(app);
 
+const internalEndPoints = [
+  { path: /\/chat\/groups\/.*/, allowedMethods: ["GET"] },
+];
+
 initializeSocketManager(httpServer);
 
 app.use(
@@ -34,6 +38,16 @@ app.get("/api/health", (req, res) => {
 app.use(
   "/api",
   (req, res, next) => {
+    if (
+      internalEndPoints.some(
+        ({ path, allowedMethods }) =>
+          path.test(req.path) && allowedMethods.includes(req.method)
+      )
+    ) {
+      next();
+      return;
+    }
+
     try {
       const decoded = req.headers["x-forwarded-user"];
       if (!decoded) throw new AuthError();

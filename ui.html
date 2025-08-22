@@ -1,0 +1,29 @@
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+<script>
+  const token = 'JWT_FROM_AUTH';    // obtain securely
+  const deviceId = 'device-abc-123'; // unique per device
+
+  const socket = io('http://localhost:3000', {
+    auth: { token, deviceId }
+  });
+
+  socket.on('connect', () => {
+    console.log('connected', socket.id);
+    // subscribe to presence of contacts (ask server to subscribe on your behalf)
+    socket.emit('subscribe_presence', { ids: ['42','43','100'] });
+
+    // start heartbeat
+    setInterval(() => {
+      socket.emit('heartbeat');
+    }, 25000); // send heartbeat every 25s (ttl is 90s on server)
+  });
+
+  socket.on('presence_state', (ev) => {
+    console.log('initial presence state', ev);
+  });
+
+  socket.on('presence_update', (ev) => {
+    // ev: { userId, online: true/false, last_seen: ISO or null }
+    console.log('presence update', ev);
+  });
+</script>

@@ -10,6 +10,7 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
     // Initial state
     conversation: {},
     chat: {},
+    userPresence: {},
     typingStatus: {},
     isChatMessagesLoading: false,
     isCoversationLoading: false,
@@ -40,6 +41,39 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
           chat: {
             ...state.chat,
             [chatId]: [...prevMessages, message],
+          },
+        };
+      });
+    },
+
+    addMembers: (chatId, members) => {
+      set((state) => {
+        const prevConversation = state.conversation[chatId] || {};
+        return {
+          conversation: {
+            ...state.conversation,
+            [chatId]: {
+              ...prevConversation,
+              participants: [...prevConversation.participants, ...members],
+            },
+          },
+        };
+      });
+    },
+
+    removeMembers: (chatId, members) => {
+      set((state) => {
+        const prevConversation = state.conversation[chatId] || {};
+        const participants = prevConversation?.participants ?? [];
+
+        const memSet = new Set(members);
+        return {
+          conversation: {
+            ...state.conversation,
+            [chatId]: {
+              ...prevConversation,
+              participants: participants.filter(({ id }) => !memSet.has(id)),
+            },
           },
         };
       });
@@ -81,6 +115,18 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
         typingStatus: {
           [chatId]: {
             [userId]: isTyping,
+          },
+        },
+      }));
+    },
+
+    updateUserPresence: (userId, status, lastSeen) => {
+      set((state) => ({
+        userPresence: {
+          ...state.userPresence,
+          [userId]: {
+            status,
+            lastSeen,
           },
         },
       }));
@@ -146,6 +192,9 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
 // Export the store with auto-generated selectors
 export const useChatStore = createSelectors(useChatStoreBase);
 
+export const useUserPresence = (userId: string) =>
+  useChatStore.use.userPresence()[userId];
+
 export const useConversations = () => useChatStore.use.conversation();
 
 export const useTypingStatus = (chatId: string, userId: string) => {
@@ -167,8 +216,14 @@ export const useChatActions = () => ({
   fetchConversations: useChatStore.use.fetchConversations(),
   fetchMessages: useChatStore.use.fetchMessages(),
   addMessage: useChatStore.use.addMessage(),
+  addMembers: useChatStore.use.addMembers(),
+  removeMembers: useChatStore.use.removeMembers(),
   updateMessageStatus: useChatStore.use.updateMessageStatus(),
   updateTypingStatus: useChatStore.use.updateTypingStatus(),
   updateMessageId: useChatStore.use.updateMessageId(),
   clearChat: useChatStore.use.clearChat(),
+});
+
+export const useUserActions = () => ({
+  updateUserPresence: useChatStore.use.updateUserPresence(),
 });

@@ -22,7 +22,7 @@ import CreateGroupDialog from "./create-group-modal";
 import { useUser } from "@/stores/auth-store";
 import { useChatLoading, useConversations } from "@/stores/chat-store";
 import { Badge } from "../ui/badge";
-import { useSocket } from "@/providers/socket-provider";
+import { useSocketState } from "@/providers/socket-provider";
 
 interface ChatSidebarProps {
   onFindFriends: () => void;
@@ -34,7 +34,7 @@ const ChatSidebar = ({ onFindFriends, allUsers }: ChatSidebarProps) => {
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
 
   const conversation = useConversations();
-  const { socketConnectionStatus } = useSocket();
+  const { status: socketConnectionStatus } = useSocketState();
   const { isCoversationLoading } = useChatLoading();
   const user = useUser();
 

@@ -1,6 +1,14 @@
 import type { IConversationBase } from "@/types/chat.types";
 
-import { Hash, Users, Bell, Search, Edit3, Link } from "lucide-react";
+import {
+  Hash,
+  Users,
+  Bell,
+  Search,
+  Edit3,
+  Link,
+  FlagTriangleLeft,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -12,9 +20,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../ui/sheet";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import AddGroupMembersDialog from "./add-group-members-modal";
+import { apiRequest } from "@/services/api-request";
+import { toastErrorHandler } from "@/lib/utils";
+import { toast } from "sonner";
+import { useChatActions } from "@/stores/chat-store";
+import { useUser } from "@/stores/auth-store";
 
 interface GroupInfoProps {
   group: IConversationBase & {
@@ -30,12 +43,36 @@ interface GroupInfoProps {
 
 export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
   const linkInputRef = useRef<HTMLInputElement | null>(null);
+  const [isLeaving, setIsLeaving] = useState(false);
+
+  const user = useUser();
+  const { removeMembers } = useChatActions();
 
   const existingMembers = group.participants.map(({ id }) => id);
 
   const handleCopy = async () => {
     if (linkInputRef.current) {
       await navigator.clipboard.writeText(linkInputRef.current.value);
+    }
+  };
+
+  const handleGroupLeave = async () => {
+    setIsLeaving(true);
+
+    try {
+      const response = await apiRequest(`/chat/groups/${group.id}/remove`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok)
+        throw new Error("Failed to leave group. Please try again later.");
+
+      removeMembers(group.id, [user!.id]);
+      toast.success(`${group.name} left successfully`);
+    } catch (error) {
+      toastErrorHandler({ error });
+    } finally {
+      setIsLeaving(false);
     }
   };
 
@@ -60,18 +97,18 @@ export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
 
               <h4 className="text-xl font-semibold mb-2">{group.name}</h4>
 
+              {group.description && (
+                <p className="text-sm text-muted-foreground">
+                  {group.description}
+                </p>
+              )}
+
               <div className="flex items-center justify-center gap-2 mb-4">
                 <Badge variant="secondary">
                   <Users className="h-3 w-3 mr-1" />
                   {group.participants.length} members
                 </Badge>
               </div>
-
-              {group.description && (
-                <p className="text-sm text-muted-foreground">
-                  {group.description}
-                </p>
-              )}
             </div>
 
             {/* Quick Actions */}
@@ -114,6 +151,15 @@ export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
               <Button variant="outline">
                 <Edit3 className="h-4 w-4" />
                 <span className="text-xs">Edit Group</span>
+              </Button>
+
+              <Button
+                variant="destructive"
+                disabled={isLeaving}
+                onClick={handleGroupLeave}
+              >
+                <FlagTriangleLeft className="h-4 w-4" />
+                <span className="text-xs">Leave Group</span>
               </Button>
             </div>
           </div>

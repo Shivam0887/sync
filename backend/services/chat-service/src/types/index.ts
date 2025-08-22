@@ -24,6 +24,7 @@ export interface ServerToClientEvents {
     status: "DELIVERED" | "READ"
   ) => void;
   user_typing: (chatId: string, userId: string, isTying: boolean) => void;
+  presence_updates: (userId: string, status: string, lastSeen: string) => void;
 }
 
 export interface ClientToServerEvents {
@@ -39,12 +40,6 @@ export interface ClientToServerEvents {
     status: "READ"
   ) => void;
   user_typing: (chatId: string, userId: string, isTying: boolean) => void;
-  join_group: (
-    groupId: string,
-    ack: (arg: { ok: false; error: string } | { ok: true }) => {}
-  ) => void;
-  leave_group: (
-    groupId: string,
-    ack: (arg: { ok: false; error: string } | { ok: true }) => {}
-  ) => void;
+  join_group: (groupIds: string[], userIds: string[]) => void;
+  leave_group: (groupId: string, userId: string) => void;
 }

@@ -155,17 +155,19 @@ export const signup = async (
           password: hashedPassword,
           username: username.toLowerCase(),
         })
-        .returning({ id: usersTable.id })
+        .returning({
+          id: usersTable.id,
+          avatarUrl: usersTable.avatarUrl,
+          username: usersTable.username,
+        })
     )[0];
 
-    const payload = {
+    const tokens = generateTokens({
       id: user.id,
       email,
-    };
+    });
 
-    const tokens = generateTokens(payload);
-
-    res.status(201).json({ ...tokens, user: { ...payload, username: email } });
+    res.status(201).json({ ...tokens, user: { ...user, email } });
   } catch (error) {
     console.error("Signup error");
     next(error);
@@ -224,6 +226,7 @@ export const signin = async (
         id: users[0].id,
         email,
         username: users[0].username,
+        avatarUrl: users[0].avatarUrl,
       },
       ...tokens,
     });

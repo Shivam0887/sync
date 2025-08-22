@@ -12,7 +12,7 @@ import {
 } from "@/stores/chat-store";
 import { Check, CheckCheck, CircleAlert, Clock, Ellipsis } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useSocket } from "@/providers/socket-provider";
+import { useSocketActions } from "@/providers/socket-provider";
 
 interface ChatMessageProps {
   message: Message;
@@ -154,7 +154,7 @@ const ChatMessages = ({
   const messages = useChat(chatId);
   const conversation = useConversations();
   const { isChatMessagesLoading } = useChatLoading();
-  const { onMessageRead } = useSocket();
+  const { onMessageRead } = useSocketActions();
   const isTyping = useTypingStatus(chatId, userId);
 
   useEffect(() => {

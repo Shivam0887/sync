@@ -3,7 +3,7 @@ import type { EmojiClickData } from "emoji-picker-react";
 
 import { nanoid } from "nanoid";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { useSocket } from "@/providers/socket-provider";
+import { useSocketActions } from "@/providers/socket-provider";
 
 import { Button } from "@/components/ui/button";
 import { Smile, Paperclip, Image, Mic } from "lucide-react";
@@ -38,7 +38,7 @@ const ChatInput = ({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cursorPosRef = useRef<number | null>(null);
 
-  const { sendMessage, onUserTyping } = useSocket();
+  const { onMessageSend, onUserTyping } = useSocketActions();
 
   const [isTyping, setIsTyping] = useDebounceValue(false, 1000, {
     leading: true,
@@ -83,7 +83,7 @@ const ChatInput = ({
       message.receiverId = receiverId;
     }
 
-    sendMessage(chatId, message as Message);
+    onMessageSend(chatId, message as Message);
     setContent("");
   };
 

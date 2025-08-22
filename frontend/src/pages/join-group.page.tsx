@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router";
 import { toastErrorHandler } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { apiRequest } from "@/services/api-request";
+import { useUser } from "@/stores/auth-store";
+import { useChatActions } from "@/stores/chat-store";
 
 const JoinGroupPage = () => {
   const { inviteToken } = useParams<{ inviteToken: string }>();
@@ -10,6 +12,8 @@ const JoinGroupPage = () => {
     "loading"
   );
   const navigate = useNavigate();
+  const user = useUser();
+  const { addMembers } = useChatActions();
 
   useEffect(() => {
     const joinGroup = async () => {
@@ -23,7 +27,10 @@ const JoinGroupPage = () => {
           throw new Error(data?.message ?? "Invalid or expired invite link");
         }
 
+        const member = user!;
+
         setStatus("success");
+        addMembers(data.groupId, [{ ...member, role: "member" }]);
         navigate(`/chat/${data.groupId}`);
       } catch (error) {
         toastErrorHandler({ error });
@@ -31,8 +38,8 @@ const JoinGroupPage = () => {
       }
     };
 
-    if (inviteToken) joinGroup();
-  }, [inviteToken, navigate]);
+    if (inviteToken && user) joinGroup();
+  }, [inviteToken, navigate, user, addMembers]);
 
   return (
     <div className="h-screen w-full flex flex-col items-center justify-center">

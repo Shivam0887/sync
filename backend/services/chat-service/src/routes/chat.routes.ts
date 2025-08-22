@@ -7,6 +7,9 @@ import {
   getMessages,
   joinViaInviteLink,
   sendMessage,
+  getUserGroups,
+  removeGroupMembers,
+  getUserPresence,
 } from "@/controllers/chat.controller.js";
 import { Router } from "express";
 
@@ -18,8 +21,14 @@ chatRouter.get("/:chatId/messages", getMessages);
 chatRouter.post("/direct", createOrGetDirectChat);
 chatRouter.post("/send", sendMessage);
 
+chatRouter.get("/groups/:userId", getUserGroups);
+chatRouter.get("/:userId/presence", getUserPresence);
+
 chatRouter.post("/groups", createGroup);
 chatRouter.post("/groups/:groupId/add", addGroupMembers);
+
+chatRouter.delete("/groups/:groupId/remove", removeGroupMembers);
+
 chatRouter.post("/groups/:groupId/invite-link", regenerateInviteLink);
 chatRouter.post("/groups/join/:inviteToken", joinViaInviteLink);
 

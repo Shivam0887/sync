@@ -8,6 +8,7 @@ export type User = {
   id: string;
   email: string;
   username: string;
+  avatarUrl: string | null;
 };
 
 // export type Auth = {

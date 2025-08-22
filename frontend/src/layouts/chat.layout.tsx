@@ -1,4 +1,4 @@
-import type { IConversationBase } from "@/types/chat.types";
+import type { IParticipant } from "@/types/chat.types";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -15,13 +15,11 @@ const MIN_WIDTH = 260;
 const WIDTH = 320;
 const MAX_WIDTH = 380;
 
-export type IUser = IConversationBase["participants"];
-
 const ChatLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(WIDTH);
 
-  const [allUsers, setAllUsers] = useState<IUser>([]);
+  const [allUsers, setAllUsers] = useState<IParticipant[]>([]);
 
   const [findFriendsOpen, setFindFriendsOpen] = useState(false);
 
@@ -81,7 +79,7 @@ const ChatLayout = () => {
         }
         return result;
       },
-      [] as IUser
+      [] as IParticipant[]
     );
 
     setAllUsers(participants);
