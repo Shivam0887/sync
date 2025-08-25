@@ -13,47 +13,51 @@ import { DialogTitle } from "@radix-ui/react-dialog";
 import { useNavigate } from "react-router";
 import { toastErrorHandler } from "@/lib/utils";
 import { useUser } from "@/stores/auth-store";
-import { useChatActions } from "@/stores/chat-store";
 import { apiRequest } from "@/services/api-request";
+import { useMutation } from "@tanstack/react-query";
+import type { IParticipant } from "@/types/chat.types";
+import { useChatActions } from "@/stores/chat-store";
 
-const FindFriends = ({
-  open,
-  onClose,
-}: {
+interface FindFriendsProps {
   open: boolean;
   onClose: () => void;
-}) => {
+}
+
+const FindFriends = ({ open, onClose }: FindFriendsProps) => {
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
   const [friends, setFriends] = useState<{ username: string; id: string }[]>(
     []
   );
 
   const router = useNavigate();
   const user = useUser();
-  const { fetchConversations } = useChatActions();
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const { addMembers } = useChatActions();
 
-    try {
+  const handleUsernameSearch = useMutation({
+    mutationKey: ["search_username"],
+    mutationFn: async (e: React.FormEvent) => {
+      e.preventDefault();
       const res = await apiRequest(`/user/username/${query}/search`);
       if (!res.ok)
         throw new Error("Unable to find friends. Please try again later");
 
       const { users } = await res.json();
-      setFriends(users);
-    } catch (error) {
-      toastErrorHandler({ error });
-    } finally {
-      setLoading(false);
-    }
-  };
+      return users;
+    },
+    onSettled: (data, error) => {
+      if (error) {
+        toastErrorHandler({ error });
+      } else {
+        setFriends(data);
+      }
+    },
+  });
 
-  const handleUserAdd = async (friendId: string) => {
-    try {
-      setLoading(true);
+  const handleUserAdd = useMutation({
+    mutationFn: async (
+      friendId: string
+    ): Promise<{ chatId: string; participant: IParticipant }> => {
       const res = await apiRequest("/chat/direct", {
         method: "POST",
         body: JSON.stringify({ otherUserId: friendId }),
@@ -61,16 +65,17 @@ const FindFriends = ({
 
       if (!res.ok) throw new Error("Failed to create or get chat");
 
-      const data = await res.json();
-      await fetchConversations();
-
-      router(`/chat/${data.chatId}`);
-    } catch (error) {
-      toastErrorHandler({ error });
-    } finally {
-      setLoading(false);
-    }
-  };
+      return await res.json();
+    },
+    onSettled: (data, error) => {
+      if (error) {
+        toastErrorHandler({ error });
+      } else if (data) {
+        addMembers(data.chatId, [data.participant]);
+        router(`/chat/${data.chatId}`);
+      }
+    },
+  });
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -82,7 +87,10 @@ const FindFriends = ({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSearch} className="flex gap-2 mb-4">
+        <form
+          onSubmit={handleUsernameSearch.mutate}
+          className="flex gap-2 mb-4"
+        >
           <Input
             placeholder="Enter username..."
             value={query}
@@ -90,8 +98,12 @@ const FindFriends = ({
             className="flex-1"
             autoFocus
           />
-          <Button type="submit" size="icon" disabled={loading}>
-            {loading ? (
+          <Button
+            type="submit"
+            size="icon"
+            disabled={handleUsernameSearch.isPending}
+          >
+            {handleUsernameSearch.isPending ? (
               <Loader2 className="animate-spin" size={18} />
             ) : (
               <Search className="size-4" />
@@ -99,7 +111,7 @@ const FindFriends = ({
           </Button>
         </form>
 
-        {!loading && !friends.length && (
+        {!handleUsernameSearch.isPending && !friends.length && (
           <div className="text-center text-muted-foreground py-6">
             Start typing a username to search.
           </div>
@@ -124,7 +136,7 @@ const FindFriends = ({
                 variant="secondary"
                 type="button"
                 disabled={id === user?.id}
-                onClick={() => handleUserAdd(id)}
+                onClick={() => handleUserAdd.mutate(id)}
               >
                 <UserPlus size={16} className="mr-1" /> Add
               </Button>

@@ -235,7 +235,18 @@ export const createOrGetDirectChat = async (
       { chatId: chat.id, userId: otherUserId },
     ]);
 
-    res.json({ chatId: chat.id });
+    const user = (
+      await db
+        .select({
+          id: usersTable.id,
+          username: usersTable.username,
+          avatarUrl: usersTable.avatarUrl,
+        })
+        .from(usersTable)
+        .where(eq(chatsTable.id, otherUserId))
+    )[0];
+
+    res.json({ chatId: chat.id, participant: { ...user, role: "member" } });
   } catch (error) {
     next(error);
   }
@@ -399,7 +410,6 @@ export const addGroupMembers = async (
       .onConflictDoUpdate({
         target: [chatParticipantsTable.chatId, chatParticipantsTable.userId],
         set: { leftAt: null },
-        setWhere: sql`left_at IS NOT NULL`,
       });
 
     const SocketManager = getSocketManagerInstance();
@@ -427,8 +437,7 @@ export const removeGroupMembers = async (
   next: NextFunction
 ) => {
   try {
-    const { groupId } = req.params;
-    const user = (req as any).user;
+    const { groupId, userId } = req.params;
 
     await db
       .update(chatParticipantsTable)
@@ -436,23 +445,23 @@ export const removeGroupMembers = async (
       .where(
         and(
           eq(chatParticipantsTable.chatId, groupId),
-          eq(chatParticipantsTable.userId, user.id)
+          eq(chatParticipantsTable.userId, userId)
         )
       );
 
     const SocketManager = getSocketManagerInstance();
-    await SocketManager.handleLeaveGroup(groupId, user.id);
+    await SocketManager.handleLeaveGroup(groupId, userId);
 
-    const result = await redis.get(`ug:${user.id}`);
+    const result = await redis.get(`ug:${userId}`);
     const cachedUserGroups: string[] = result ? JSON.parse(result) : [];
 
     await redis.set(
-      `ug:${user.id}`,
+      `ug:${userId}`,
       JSON.stringify(cachedUserGroups.filter((g) => g !== groupId)),
       "XX"
     );
 
-    res.json({ message: `${user.id} removed from group id ${groupId}` });
+    res.json({ message: `${userId} removed from group id ${groupId}` });
   } catch (error) {
     console.error("[RemoveGroupMemebers] error:", error);
     next(error);

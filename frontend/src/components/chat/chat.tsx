@@ -48,7 +48,7 @@ const Chat = () => {
     );
   }
 
-  if (!conversation[chatId]) return null;
+  if (!conversation) return null;
 
   const receiverId =
     conversation[chatId].type === "direct"

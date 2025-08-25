@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { apiRequest } from "@/services/api-request";
 import { useChatActions } from "@/stores/chat-store";
 import type { IParticipant } from "@/types/chat.types";
+import { useMutation } from "@tanstack/react-query";
 
 interface AddGroupMembersDialogProps {
   groupId: string;
@@ -30,11 +31,12 @@ const AddGroupMembersDialog = ({
 }: AddGroupMembersDialogProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
 
   const { addMembers } = useChatActions();
 
-  const { allUsers: users } = useOutletContext<{ allUsers: IParticipant[] }>();
+  const { directParticipants } = useOutletContext<{
+    directParticipants: IParticipant[];
+  }>();
 
   const existingMembersRef = useRef<Set<string>>(new Set(existingMembers));
 
@@ -47,29 +49,31 @@ const AddGroupMembersDialog = ({
     setSelectedUsers(newSelectedUsers);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
+  const handleSubmit = useMutation({
+    mutationKey: ["group_add_member"],
+    mutationFn: async (e: React.FormEvent) => {
+      e.preventDefault();
       const res = await apiRequest(`/chat/groups/${groupId}/add`, {
         method: "POST",
         body: JSON.stringify({ userIds: Array.from(selectedUsers) }),
       });
 
       if (!res.ok) throw new Error("Failed to add members");
-      toast.success("Users added successfully");
+    },
+    onSettled: (_, error) => {
+      if (error) {
+        toastErrorHandler({ error });
+      } else {
+        toast.success("Users added successfully");
 
-      addMembers(
-        groupId,
-        users.filter(({ id }) => selectedUsers.has(id))
-      );
-      setIsOpen(false);
-    } catch (error) {
-      toastErrorHandler({ error });
-    } finally {
-      setLoading(false);
-    }
-  };
+        addMembers(
+          groupId,
+          directParticipants.filter(({ id }) => selectedUsers.has(id))
+        );
+        setIsOpen(false);
+      }
+    },
+  });
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -86,16 +90,16 @@ const AddGroupMembersDialog = ({
             Select users to add to this group.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit.mutate} className="space-y-4">
           <div>
             <div className="font-semibold mb-1">Users</div>
             <div className="max-h-40 overflow-y-auto border rounded p-2 space-y-2">
-              {users.length === 0 && (
+              {directParticipants.length === 0 && (
                 <div className="text-xs text-muted-foreground">
                   No users available to add.
                 </div>
               )}
-              {users.map((u) => (
+              {directParticipants.map((u) => (
                 <Label
                   key={u.id}
                   className="flex items-center justify-between gap-2"
@@ -120,8 +124,11 @@ const AddGroupMembersDialog = ({
               ))}
             </div>
           </div>
-          <Button type="submit" disabled={loading || selectedUsers.size === 0}>
-            {loading ? "Adding..." : "Add Members"}
+          <Button
+            type="submit"
+            disabled={handleSubmit.isPending || selectedUsers.size === 0}
+          >
+            {handleSubmit.isPending ? "Adding..." : "Add Members"}
           </Button>
         </form>
       </DialogContent>

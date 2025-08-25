@@ -1,4 +1,4 @@
-import type { IConversationBase } from "@/types/chat.types";
+import type { IConversationBase, IGroupConversation } from "@/types/chat.types";
 
 import {
   Hash,
@@ -8,6 +8,7 @@ import {
   Edit3,
   Link,
   FlagTriangleLeft,
+  LogOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -20,7 +21,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../ui/sheet";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import AddGroupMembersDialog from "./add-group-members-modal";
 import { apiRequest } from "@/services/api-request";
@@ -28,27 +29,25 @@ import { toastErrorHandler } from "@/lib/utils";
 import { toast } from "sonner";
 import { useChatActions } from "@/stores/chat-store";
 import { useUser } from "@/stores/auth-store";
+import { useMutation } from "@tanstack/react-query";
 
 interface GroupInfoProps {
-  group: IConversationBase & {
-    type: "group";
-    name: string;
-    description: string | null;
-    avatarUrl: string | null;
-    inviteLink: string | null;
-  };
+  group: IConversationBase & IGroupConversation;
   onClose: () => void;
   open: boolean;
 }
 
 export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
   const linkInputRef = useRef<HTMLInputElement | null>(null);
-  const [isLeaving, setIsLeaving] = useState(false);
 
   const user = useUser();
   const { removeMembers } = useChatActions();
 
   const existingMembers = group.participants.map(({ id }) => id);
+
+  const isAdmin = group.participants.some(
+    ({ id, role }) => role === "admin" && id === user?.id
+  );
 
   const handleCopy = async () => {
     if (linkInputRef.current) {
@@ -56,25 +55,28 @@ export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
     }
   };
 
-  const handleGroupLeave = async () => {
-    setIsLeaving(true);
-
-    try {
-      const response = await apiRequest(`/chat/groups/${group.id}/remove`, {
-        method: "DELETE",
-      });
+  const handleGroupLeave = useMutation({
+    mutationKey: ["group_leave"],
+    mutationFn: async ({ userId }: { userId: string; username: string }) => {
+      const response = await apiRequest(
+        `/chat/groups/${group.id}/remove/${userId}`,
+        {
+          method: "DELETE",
+        }
+      );
 
       if (!response.ok)
         throw new Error("Failed to leave group. Please try again later.");
-
-      removeMembers(group.id, [user!.id]);
-      toast.success(`${group.name} left successfully`);
-    } catch (error) {
-      toastErrorHandler({ error });
-    } finally {
-      setIsLeaving(false);
-    }
-  };
+    },
+    onSettled(_, error, { userId, username }) {
+      if (error) {
+        toastErrorHandler({ error });
+      } else {
+        toast.success(`${username} removed successfully`);
+        removeMembers(group.id, [userId]);
+      }
+    },
+  });
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
@@ -155,8 +157,13 @@ export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
 
               <Button
                 variant="destructive"
-                disabled={isLeaving}
-                onClick={handleGroupLeave}
+                disabled={handleGroupLeave.isPending}
+                onClick={() =>
+                  handleGroupLeave.mutate({
+                    userId: user!.id,
+                    username: user!.username,
+                  })
+                }
               >
                 <FlagTriangleLeft className="h-4 w-4" />
                 <span className="text-xs">Leave Group</span>
@@ -183,7 +190,7 @@ export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
               {group.participants.map((member) => (
                 <div
                   key={member.id}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer"
+                  className="group flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer"
                 >
                   <div className="relative">
                     <Avatar className="h-8 w-8">
@@ -214,6 +221,24 @@ export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
                       )}
                     </div>
                   </div>
+
+                  {(isAdmin || member.id === user?.id) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="group-hover:opacity-100 opacity-0 transition-opacity"
+                      disabled={handleGroupLeave.isPending}
+                      onClick={() =>
+                        handleGroupLeave.mutate({
+                          userId: member.id,
+                          username: member.username,
+                        })
+                      }
+                    >
+                      <LogOut className="size-4" />
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>

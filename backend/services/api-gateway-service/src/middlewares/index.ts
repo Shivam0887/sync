@@ -15,7 +15,6 @@ import {
   ValidationError,
 } from "@shared/dist/error-handler";
 import redis from "@/config/redis-db";
-import { error } from "console";
 
 const ACCESS_TOKEN_SECRET = env.ACCESS_TOKEN_SECRET;
 const JWT_ISSUER = env.JWT_ISSUER;
@@ -110,12 +109,6 @@ export const httpReverseProxy = (
     pathRewrite: (path, req) => req.originalUrl,
     on: {
       error: (err, req, res) => {
-        console.error(
-          `[ProxyError] ${req.method} ${req.originalUrl}:`,
-          err.message
-        );
-
-        console.error(error);
         Sentry.withScope((scope) => {
           scope.setContext("service", {
             serviceName,

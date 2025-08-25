@@ -1,5 +1,3 @@
-import type { IUser } from "@/layouts/chat.layout";
-
 import { Link } from "react-router";
 import { useState } from "react";
 
@@ -12,31 +10,49 @@ import {
   RefreshCcw,
 } from "lucide-react";
 
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import Settings from "@/components/settings";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import ChatSidebarSkeleton from "@/components/skeleton-loading/chat-sidebar-skeleton";
 
-import ChatSidebarSkeleton from "../skeleton-loading/chat-sidebar-skeleton";
-import Settings from "../settings";
 import CreateGroupDialog from "./create-group-modal";
+
 import { useUser } from "@/stores/auth-store";
-import { useChatLoading, useConversations } from "@/stores/chat-store";
-import { Badge } from "../ui/badge";
+import { useFetchConversations } from "@/stores/chat-store";
+
 import { useSocketState } from "@/providers/socket-provider";
+import { toastErrorHandler } from "@/lib/utils";
+import type { IParticipant } from "@/types/chat.types";
 
 interface ChatSidebarProps {
   onFindFriends: () => void;
-  allUsers: IUser;
+  directParticipants: IParticipant[];
 }
 
-const ChatSidebar = ({ onFindFriends, allUsers }: ChatSidebarProps) => {
+const ChatSidebar = ({
+  onFindFriends,
+  directParticipants,
+}: ChatSidebarProps) => {
   const [query, setQuery] = useState("");
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
 
-  const conversation = useConversations();
-  const { status: socketConnectionStatus } = useSocketState();
-  const { isCoversationLoading } = useChatLoading();
   const user = useUser();
+  const { status: socketConnectionStatus } = useSocketState();
+
+  const {
+    data: conversation,
+    isLoading: isConversationLoading,
+    error,
+  } = useFetchConversations();
+
+  if (error) {
+    toastErrorHandler({ error });
+    return null;
+  }
+
+  if (!conversation) return null;
 
   return (
     <div className="relative border-r z-50 flex flex-col w-[calc(100%-0.2rem)] h-full bg-sidebar text-sidebar-foreground rounded-r-2xl">
@@ -120,7 +136,7 @@ const ChatSidebar = ({ onFindFriends, allUsers }: ChatSidebarProps) => {
           </div>
         </div>
         <ul className="space-y-1">
-          {isCoversationLoading ? (
+          {isConversationLoading ? (
             <ChatSidebarSkeleton />
           ) : (
             <>
@@ -130,7 +146,11 @@ const ChatSidebar = ({ onFindFriends, allUsers }: ChatSidebarProps) => {
                     ? conversation[id].participants[0].id !== user?.id
                       ? conversation[id].participants[0]
                       : conversation[id].participants[1]
-                    : { ...conversation[id], username: conversation[id].name };
+                    : {
+                        id,
+                        avatarUrl: conversation[id].avatarUrl,
+                        username: conversation[id].name,
+                      };
 
                 return (
                   <div key={id}>
@@ -181,7 +201,7 @@ const ChatSidebar = ({ onFindFriends, allUsers }: ChatSidebarProps) => {
         <CreateGroupDialog
           open={groupDialogOpen}
           onClose={() => setGroupDialogOpen(false)}
-          allUsers={allUsers}
+          directParticipants={directParticipants}
         />
       )}
     </div>

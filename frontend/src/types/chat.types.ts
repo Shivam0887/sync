@@ -41,23 +41,23 @@ export interface IConversationBase {
   participants: IParticipant[];
 }
 
+export interface IGroupConversation {
+  type: "group";
+  name: string;
+  description: string | null;
+  avatarUrl: string | null;
+  inviteLink: string | null;
+}
+
 export type Conversation = IConversationBase &
   (
     | {
         type: "direct";
       }
-    | {
-        type: "group";
-        name: string;
-        description: string | null;
-        avatarUrl: string | null;
-        inviteLink: string | null;
-      }
+    | IGroupConversation
   );
 
 export interface IChatState {
-  conversation: { [id: string]: Conversation };
-  chat: { [chatId: string]: Message[] };
   userPresence: {
     [userId: string]: {
       status: UserPresence;
@@ -65,16 +65,12 @@ export interface IChatState {
     } | null;
   };
   typingStatus: {
-    [chatId: string]: { [userId: string]: boolean };
+    [id: string]: boolean;
   };
-  isCoversationLoading: boolean;
-  isChatMessagesLoading: boolean;
 }
 
 export interface IChatActions {
   // State setters
-  setConversations: (conversations: Conversation[]) => void;
-  setChat: (chatId: string, messages: Message[]) => void;
   addMessage: (chatId: string, message: Message) => void;
   addMembers: (chatId: string, members: IParticipant[]) => void;
   removeMembers: (chatId: string, members: string[]) => void;
@@ -94,15 +90,7 @@ export interface IChatActions {
     status: UserPresence,
     lastSeen: string
   ) => void;
-  setLoading: (
-    loadType: "conversation" | "messages",
-    isLoading: boolean
-  ) => void;
 
-  // API actions
-  fetchConversations: () => Promise<void>;
-  fetchMessages: (chatId: string) => Promise<void>;
-
-  // Utility
-  clearChat: () => void;
+  // // Utility
+  // clearChat: () => void;
 }

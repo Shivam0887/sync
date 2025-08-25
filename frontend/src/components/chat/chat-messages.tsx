@@ -5,13 +5,12 @@ import { Avatar } from "@/components/ui/avatar";
 import { format, getTime } from "date-fns";
 import ChatMessagesSkeleton from "../skeleton-loading/chat-messages-skeleton";
 import {
-  useChat,
-  useChatLoading,
   useConversations,
+  useFetchChatMessages,
   useTypingStatus,
 } from "@/stores/chat-store";
 import { Check, CheckCheck, CircleAlert, Clock, Ellipsis } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, toastErrorHandler } from "@/lib/utils";
 import { useSocketActions } from "@/providers/socket-provider";
 
 interface ChatMessageProps {
@@ -34,12 +33,8 @@ const ChatMessage = ({
   const prevMessageStatusRef = useRef(message.status);
 
   useEffect(() => {
-    if (
-      prevMessageStatusRef.current === "SENDING" &&
-      (message.status === "SENT" || message.status === "DELIVERED")
-    ) {
+    if (prevMessageStatusRef.current === "SENDING" && message.status === "SENT")
       playSendMessageSound();
-    }
   }, [message.status, playSendMessageSound]);
 
   // For direct messages, get the other participant's info
@@ -141,19 +136,20 @@ const ChatMessage = ({
   );
 };
 
-const ChatMessages = ({
-  chatId,
-  userId,
-}: {
+const ChatMessages: React.FC<{
   chatId: string;
   userId: string;
-}) => {
+}> = ({ chatId, userId }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const messages = useChat(chatId);
+  const {
+    data: messages,
+    isLoading: isChatMessagesLoading,
+    error,
+  } = useFetchChatMessages(chatId);
+
   const conversation = useConversations();
-  const { isChatMessagesLoading } = useChatLoading();
   const { onMessageRead } = useSocketActions();
   const isTyping = useTypingStatus(chatId, userId);
 
@@ -164,13 +160,6 @@ const ChatMessages = ({
 
     scrollToBottom();
   }, [messages]);
-
-  const playSendMessageSound = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = 0.1;
-      audioRef.current.play();
-    }
-  }, []);
 
   useEffect(() => {
     const observer = new IntersectionObserver((entries) => {
@@ -194,9 +183,16 @@ const ChatMessages = ({
     };
   }, [userId, chatId, messages, onMessageRead]);
 
+  const playSendMessageSound = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = 0.1;
+      audioRef.current.play();
+    }
+  }, []);
+
   const groupedMessages: { [key: string]: Message[] } = {};
 
-  (messages || []).forEach((message) => {
+  (messages ?? []).forEach((message) => {
     const dateKey = format(message.timestamp, "yyyy-MM-dd");
     if (!groupedMessages[dateKey]) {
       groupedMessages[dateKey] = [];
@@ -204,7 +200,12 @@ const ChatMessages = ({
     groupedMessages[dateKey].push(message);
   });
 
-  if (!conversation[chatId])
+  if (error) {
+    toastErrorHandler({ error });
+    return null;
+  }
+
+  if (!conversation)
     return (
       <div className="text-center text-destructive py-8">
         Conversation not found or you don&apos;t have access.

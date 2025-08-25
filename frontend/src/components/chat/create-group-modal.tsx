@@ -1,4 +1,9 @@
+import type { IParticipant } from "@/types/chat.types";
+
+import { useNavigate } from "react-router";
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+
 import {
   Dialog,
   DialogContent,
@@ -6,40 +11,36 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
 import { toastErrorHandler } from "@/lib/utils";
-import { useNavigate } from "react-router";
-import { Label } from "../ui/label";
-import type { IUser } from "@/layouts/chat.layout";
-import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
-import { useChatActions } from "@/stores/chat-store";
 import { apiRequest } from "@/services/api-request";
 
 interface CreateGroupDialogProps {
   open: boolean;
   onClose: () => void;
-  allUsers: IUser;
+  directParticipants: IParticipant[];
 }
 
 const CreateGroupDialog = ({
   open,
   onClose,
-  allUsers,
+  directParticipants,
 }: CreateGroupDialogProps) => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
 
-  const { fetchConversations } = useChatActions();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const handleSubmit = useMutation({
+    mutationKey: ["groups"],
+    mutationFn: async (e: React.FormEvent) => {
+      e.preventDefault();
 
-    try {
       const res = await apiRequest("/chat/groups", {
         method: "POST",
         body: JSON.stringify({
@@ -52,18 +53,16 @@ const CreateGroupDialog = ({
       if (!res.ok) throw new Error("Failed to create group");
 
       const { groupId } = await res.json();
-
-      //Todo: Add new group or chat directly into conversations state rather than calling the fetchConversations
-      await fetchConversations();
-
+      return groupId as string;
+    },
+    onError: (error) => {
+      toastErrorHandler({ error });
+    },
+    onSuccess: (groupId) => {
       onClose();
       navigate(`/chat/${groupId}`);
-    } catch (error) {
-      toastErrorHandler({ error });
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+  });
 
   const handleUserToggle = (id: string) => {
     setSelectedUsers((prev) =>
@@ -71,7 +70,6 @@ const CreateGroupDialog = ({
     );
   };
 
-  console.log({ selectedUsers });
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
@@ -81,7 +79,7 @@ const CreateGroupDialog = ({
             Enter group details and select members to start a new group chat.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit.mutate} className="space-y-4">
           <Input
             placeholder="Group Name"
             value={name}
@@ -96,7 +94,7 @@ const CreateGroupDialog = ({
           <div>
             <div className="font-semibold mb-1">Add Members</div>
             <div className="max-h-40 overflow-y-auto border rounded p-2 space-y-2">
-              {allUsers.map((u) => (
+              {directParticipants.map((u) => (
                 <Label
                   key={u.id}
                   className="flex items-center justify-between gap-2"
@@ -120,8 +118,8 @@ const CreateGroupDialog = ({
               ))}
             </div>
           </div>
-          <Button type="submit" disabled={loading || !name}>
-            {loading ? "Creating..." : "Create Group"}
+          <Button type="submit" disabled={handleSubmit.isPending || !name}>
+            {handleSubmit.isPending ? "Creating..." : "Create Group"}
           </Button>
         </form>
       </DialogContent>

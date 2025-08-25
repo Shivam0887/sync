@@ -201,7 +201,7 @@ class SocketManager {
   }
 
   private startPeriodicCleanup() {
-    this.batchTimer = setInterval(() => {
+    setInterval(() => {
       this.cleanupStalePresence();
       this.updateAwayStatus();
     }, 60000); // Every minute

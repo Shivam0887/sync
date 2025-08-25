@@ -1,121 +1,146 @@
-import type { IChatState, IChatActions } from "@/types/chat.types";
+import type {
+  IChatState,
+  IChatActions,
+  Conversation,
+  Message,
+} from "@/types/chat.types";
 
 import { create } from "zustand";
-import { subscribeWithSelector } from "zustand/middleware";
-import { createSelectors, toastErrorHandler } from "@/lib/utils";
+import { devtools } from "zustand/middleware";
+import { createSelectors } from "@/lib/utils";
 import { apiRequest } from "@/services/api-request";
+import { queryOptions, useQuery } from "@tanstack/react-query";
+import { queryClient } from "@/lib/query-client";
+
+const chatQueryKeys = {
+  conversations: ["conversations"] as const,
+  messages: (chatId: string) => ["message", chatId] as const,
+};
+
+export function converationOptions() {
+  return queryOptions({
+    queryKey: chatQueryKeys.conversations,
+    queryFn: async () => {
+      const res = await apiRequest("/chat/conversations");
+
+      if (!res.ok) throw new Error("Failed to fetch conversations");
+
+      const data = await res.json();
+      return (data.conversations as Conversation[]).reduce(
+        (result, conversation) => {
+          result[conversation.id] = conversation;
+
+          return result;
+        },
+        {} as Record<string, Conversation>
+      );
+    },
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function chatMessageOptions(chatId: string) {
+  return queryOptions({
+    queryKey: chatQueryKeys.messages(chatId),
+    queryFn: async (): Promise<Message[]> => {
+      const res = await apiRequest(`/chat/${chatId}/messages`);
+
+      if (!res.ok) throw new Error("Failed to fetch messages");
+
+      const data = await res.json();
+      return data.messages;
+    },
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
+  });
+}
+
+export const useFetchConversations = () => useQuery(converationOptions());
+
+export const useFetchChatMessages = (chatId: string) =>
+  useQuery(chatMessageOptions(chatId));
 
 const useChatStoreBase = create<IChatState & IChatActions>()(
-  subscribeWithSelector((set, get) => ({
+  devtools((set) => ({
     // Initial state
-    conversation: {},
-    chat: {},
     userPresence: {},
     typingStatus: {},
-    isChatMessagesLoading: false,
-    isCoversationLoading: false,
-
-    // State setters
-    setConversations: (conversations) => {
-      const conversationMap = conversations.reduce((result, conversation) => {
-        result[conversation.id] = conversation;
-        return result;
-      }, {} as IChatState["conversation"]);
-
-      set({ conversation: conversationMap });
-    },
-
-    setChat: (chatId, messages) => {
-      set((state) => ({
-        chat: {
-          ...state.chat,
-          [chatId]: messages,
-        },
-      }));
-    },
 
     addMessage: (chatId, message) => {
-      set((state) => {
-        const prevMessages = state.chat[chatId] || [];
-        return {
-          chat: {
-            ...state.chat,
-            [chatId]: [...prevMessages, message],
-          },
-        };
+      const messagesKey = chatMessageOptions(chatId).queryKey;
+
+      queryClient.setQueryData(messagesKey, (oldMessages = []) => {
+        return [...oldMessages, message];
       });
     },
 
     addMembers: (chatId, members) => {
-      set((state) => {
-        const prevConversation = state.conversation[chatId] || {};
-        return {
-          conversation: {
-            ...state.conversation,
+      queryClient.setQueryData(
+        converationOptions().queryKey,
+        (conversation = {}) => {
+          const prevConversation = conversation[chatId] || {};
+          const participants = prevConversation?.participants ?? [];
+
+          return {
+            ...conversation,
             [chatId]: {
               ...prevConversation,
-              participants: [...prevConversation.participants, ...members],
+              participants: [...participants, ...members],
             },
-          },
-        };
-      });
+          };
+        }
+      );
     },
 
     removeMembers: (chatId, members) => {
-      set((state) => {
-        const prevConversation = state.conversation[chatId] || {};
-        const participants = prevConversation?.participants ?? [];
+      queryClient.setQueryData(
+        converationOptions().queryKey,
+        (conversation = {}) => {
+          const prevConversation = conversation[chatId] || {};
+          const participants = prevConversation?.participants ?? [];
 
-        const memSet = new Set(members);
-        return {
-          conversation: {
-            ...state.conversation,
+          const memberIdSet = new Set(members);
+          return {
+            ...conversation,
             [chatId]: {
               ...prevConversation,
-              participants: participants.filter(({ id }) => !memSet.has(id)),
+              participants: participants.filter(
+                ({ id }) => !memberIdSet.has(id)
+              ),
             },
-          },
-        };
-      });
+          };
+        }
+      );
     },
 
     updateMessageStatus: (chatId, messageId, status) => {
-      set((state) => {
-        const messages = state.chat[chatId] || [];
-        return {
-          chat: {
-            ...state.chat,
-            [chatId]: messages.map((message) => {
-              if (message.id === messageId) message.status = status;
-              return message;
-            }),
-          },
-        };
+      const messagesKey = chatMessageOptions(chatId).queryKey;
+
+      queryClient.setQueryData(messagesKey, (oldMessages = []) => {
+        return oldMessages.map((message) =>
+          message.id === messageId ? { ...message, status } : message
+        );
       });
     },
 
     updateMessageId: (chatId, tempId, newId) => {
-      set((state) => {
-        const messages = state.chat[chatId] || [];
-        return {
-          chat: {
-            ...state.chat,
-            [chatId]: messages.map((message) => {
-              if (message.id === tempId) message.id = newId;
+      const messagesKey = chatMessageOptions(chatId).queryKey;
 
-              return message;
-            }),
-          },
-        };
+      queryClient.setQueryData(messagesKey, (oldMessages = []) => {
+        return oldMessages.map((message) =>
+          message.id === tempId ? { ...message, id: newId } : message
+        );
       });
     },
 
     updateTypingStatus: (chatId, userId, isTyping) => {
       set(() => ({
         typingStatus: {
-          [chatId]: {
-            [userId]: isTyping,
-          },
+          [`${chatId}:${userId}`]: isTyping,
         },
       }));
     },
@@ -131,61 +156,6 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
         },
       }));
     },
-
-    setLoading: (loadType, isLoading) => {
-      set((state) => ({
-        ...state,
-        ...(loadType === "conversation"
-          ? { isCoversationLoading: isLoading }
-          : { isChatMessagesLoading: isLoading }),
-      }));
-    },
-
-    clearChat: () => {
-      set({
-        conversation: {},
-        chat: {},
-        isChatMessagesLoading: false,
-        isCoversationLoading: false,
-      });
-    },
-
-    // API actions
-    fetchConversations: async () => {
-      const { setLoading, setConversations } = get();
-      setLoading("conversation", true);
-
-      try {
-        const res = await apiRequest("/chat/conversations");
-
-        if (!res.ok) throw new Error("Failed to fetch conversations");
-
-        const data = await res.json();
-        setConversations(data.conversations);
-      } catch (error) {
-        toastErrorHandler({ error });
-      } finally {
-        setLoading("conversation", false);
-      }
-    },
-
-    fetchMessages: async (chatId: string) => {
-      const { setLoading, setChat } = get();
-      setLoading("messages", true);
-
-      try {
-        const res = await apiRequest(`/chat/${chatId}/messages`);
-
-        if (!res.ok) throw new Error("Failed to fetch messages");
-
-        const data = await res.json();
-        setChat(chatId, data.messages);
-      } catch (error) {
-        toastErrorHandler({ error });
-      } finally {
-        setLoading("messages", false);
-      }
-    },
   }))
 );
 
@@ -195,33 +165,31 @@ export const useChatStore = createSelectors(useChatStoreBase);
 export const useUserPresence = (userId: string) =>
   useChatStore.use.userPresence()[userId];
 
-export const useConversations = () => useChatStore.use.conversation();
+export const useConversations = () => {
+  const { data } = useQuery({ ...converationOptions(), enabled: false });
+  return data;
+};
+
+export const useChat = (chatId: string) => {
+  const { data } = useQuery({ ...chatMessageOptions(chatId), enabled: false });
+  return data;
+};
 
 export const useTypingStatus = (chatId: string, userId: string) => {
   const isTyping: boolean | undefined =
-    useChatStore.use.typingStatus()[chatId]?.[userId];
+    useChatStore.use.typingStatus()[`${chatId}:${userId}`];
 
   return isTyping ?? false;
 };
 
-export const useChat = (chatId: string) => useChatStore.use.chat()[chatId];
-
-export const useChatLoading = () => ({
-  isChatMessagesLoading: useChatStore.use.isChatMessagesLoading(),
-  isCoversationLoading: useChatStore.use.isCoversationLoading(),
-});
-
 // Action selectors
 export const useChatActions = () => ({
-  fetchConversations: useChatStore.use.fetchConversations(),
-  fetchMessages: useChatStore.use.fetchMessages(),
   addMessage: useChatStore.use.addMessage(),
   addMembers: useChatStore.use.addMembers(),
   removeMembers: useChatStore.use.removeMembers(),
   updateMessageStatus: useChatStore.use.updateMessageStatus(),
   updateTypingStatus: useChatStore.use.updateTypingStatus(),
   updateMessageId: useChatStore.use.updateMessageId(),
-  clearChat: useChatStore.use.clearChat(),
 });
 
 export const useUserActions = () => ({
