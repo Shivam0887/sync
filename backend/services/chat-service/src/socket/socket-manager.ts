@@ -579,8 +579,6 @@ class SocketManager {
   }
 
   private async handleDisconnect(reason: string, socket: IOSocket) {
-    console.log("Socket disconnected:", socket.id, reason);
-
     const connectedClients = await this.ioInstance.fetchSockets();
 
     if (connectedClients.length === 0) {

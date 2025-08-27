@@ -9,6 +9,7 @@ import useThrottleCallback from "@/hooks/use-throttle-callback";
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -68,7 +69,7 @@ const ChatLayout = () => {
     };
   }, [throlledHandleMove]);
 
-  useCallback(() => {
+  useEffect(() => {
     setSidebarOpen(!isMobile);
   }, [isMobile]);
 
@@ -112,13 +113,14 @@ const ChatLayout = () => {
     <div className="relative h-full w-full flex">
       {isMobile ? (
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-          <SheetContent side="left">
-            <SheetHeader>
+          <SheetContent side="left" className="rounded-2xl gap-0">
+            <SheetHeader className="hidden">
               <SheetTitle />
+              <SheetDescription />
             </SheetHeader>
-
             <ChatSidebar
               onFindFriends={() => setFindFriendsOpen(true)}
+              toggleSidebar={toggleSidebar}
               directParticipants={directParticipants}
             />
           </SheetContent>
@@ -137,6 +139,7 @@ const ChatLayout = () => {
         >
           <ChatSidebar
             onFindFriends={() => setFindFriendsOpen(true)}
+            toggleSidebar={toggleSidebar}
             directParticipants={directParticipants}
           />
 

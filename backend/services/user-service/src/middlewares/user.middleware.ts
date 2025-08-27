@@ -9,55 +9,55 @@ import { eq, like } from "drizzle-orm";
 import { ConflictError } from "@shared/dist/error-handler/index.js";
 import { PrefixTree } from "@/lib/prefix-search/index.js";
 import { usernameSchema } from "@/controllers/auth.controller.js";
+import { IUser } from "@/types/index.js";
 
-const bloomFilter = new BloomFilter(1000);
-
-export const checkAvailableUsername = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
-    const username = usernameSchema.parse(req.params?.username).toLowerCase();
-
-    if (!bloomFilter.has(username)) {
-      bloomFilter.add(username);
-      next();
-      return;
-    }
-
-    const isUsernameExists = Boolean(
-      await redis.sismember("sync_username", username)
-    );
-
-    if (isUsernameExists) {
-      throw new ConflictError("Username already exists");
-    }
-
-    const isUserExists =
-      (
-        await db
-          .select()
-          .from(usersTable)
-          .where(eq(usersTable.username, username))
-      ).length === 1;
-
-    if (isUserExists) {
-      throw new ConflictError("Username already exists");
-    }
-
-    next();
-  } catch (error) {
-    console.log("Check username availability error");
-    next(error);
-  }
-};
-
-export const searchUsername = (searchUsernamePrefix: PrefixTree) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+export const checkUsernameAvailability =
+  (bloomFilter: BloomFilter, searchUsernamePrefix: PrefixTree<IUser>) =>
+  async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const username = usernameSchema.parse(req.params?.username).toLowerCase();
-      const prefixResult = searchUsernamePrefix.searchPrefix(username);
+      const username = usernameSchema
+        .parse(req.params.username)
+        .trim()
+        .toLowerCase();
+
+      if (!bloomFilter.has(username)) {
+        bloomFilter.add(username);
+        next();
+        return;
+      }
+
+      const isUsernamePrefixed = searchUsernamePrefix.search(username);
+
+      if (isUsernamePrefixed) throw new ConflictError("Username already exists");
+
+      const isUsernameInCache = await redis.sismember("username", username);
+
+      if (isUsernameInCache) throw new ConflictError("Username already exists");
+
+      const isUsernameInDB = await db
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.username, username));
+
+      if (isUsernameInDB.length) throw new ConflictError("Username already exists");
+
+      next();
+    } catch (error) {
+      console.log("Check username availability error");
+      next(error);
+    }
+  };
+
+export const searchUsername =
+  (searchUsernamePrefix: PrefixTree<IUser>) =>
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const username = usernameSchema
+        .parse(req.params.username)
+        .trim()
+        .toLowerCase();
+
+      const prefixResult = searchUsernamePrefix.startsWith(username);
 
       if (prefixResult.length) {
         res.json({
@@ -67,7 +67,11 @@ export const searchUsername = (searchUsernamePrefix: PrefixTree) => {
       }
 
       const dbResult = await db
-        .select({ id: usersTable.id, username: usersTable.username })
+        .select({
+          id: usersTable.id,
+          username: usersTable.username,
+          avatarUrl: usersTable.avatarUrl,
+        })
         .from(usersTable)
         .where(like(usersTable.username, `${username}%`))
         .limit(10);
@@ -80,4 +84,3 @@ export const searchUsername = (searchUsernamePrefix: PrefixTree) => {
       next(error);
     }
   };
-};

@@ -1,10 +1,19 @@
 import type { Request, Response, NextFunction } from "express";
-import type { RateLimitOptions } from "../types/index.js";
 
 import jwt from "jsonwebtoken";
 import { ZodError } from "zod";
 
-import { AppError, RateLimitError } from "./index.js";
+import { AppError } from "./index.js";
+
+function isAppError(err: unknown): err is AppError {
+  return (
+    !!err &&
+    typeof err === "object" &&
+    typeof (err as any).isOperational === "boolean" &&
+    typeof (err as any).code === "string" &&
+    typeof (err as any).statusCode === "number"
+  );
+}
 
 export function errorHandler(
   err: unknown,
@@ -38,7 +47,7 @@ export function errorHandler(
     message = err.message;
     stack = err.stack;
     code = "VALIDATION_ERROR";
-  } else if (err instanceof AppError && err.isOperational) {
+  } else if (isAppError(err) && err.isOperational) {
     statusCode = err.statusCode;
     message = err.message;
     stack = err.stack;

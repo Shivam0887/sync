@@ -15,7 +15,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { signinSchema } from "@/lib/schema";
-import { toastErrorHandler } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuthActions } from "@/stores/auth-store";
 
@@ -36,14 +35,10 @@ const Signin = () => {
   });
 
   const handleSubmit = async (values: TSignin) => {
-    try {
-      const response = await signin(values.email, values.password);
-      if (response.success) {
-        toast(response.message);
-        navigate("/chat");
-      }
-    } catch (error) {
-      toastErrorHandler({ error });
+    const response = await signin(values.email, values.password);
+    if (response.success) {
+      toast(response.message);
+      navigate("/chat");
     }
   };
 

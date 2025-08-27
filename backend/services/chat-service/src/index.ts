@@ -9,9 +9,15 @@ import { createServer } from "http";
 import { AuthError } from "@shared/dist/error-handler/index.js";
 import { errorHandler } from "@shared/dist/error-handler/error.middleware.js";
 import initializeSocketManager from "./socket/socket-manager.js";
+import z from "zod/v4";
 
 const app = express();
 const httpServer = createServer(app);
+
+const decodedUserSchema = z.object({
+  id: z.string({ error: "user id is missing" }),
+  email: z.email({ error: "user email is missing" }),
+});
 
 const internalEndPoints = [
   { path: /\/chat\/groups\/.*/, allowedMethods: ["GET"] },
@@ -52,7 +58,9 @@ app.use(
       const decoded = req.headers["x-forwarded-user"];
       if (!decoded) throw new AuthError();
 
-      (req as any).user = JSON.parse(decoded as string);
+      (req as any).user = decodedUserSchema.parse(
+        JSON.parse(decoded as string)
+      );
 
       next();
     } catch (error) {

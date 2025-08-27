@@ -18,10 +18,11 @@ export class CountingBloomFilter {
   private counterBits: number;
   private maxCounterValue: number;
   private countersPerByte: number;
-  public elementsAdded: number;
   private counterMask: number;
 
   private counterArray: Uint8Array;
+
+  public elementsAdded: number;
 
   /**
    * Initialize Counting Bloom Filter with optimal parameters.
@@ -71,7 +72,7 @@ export class CountingBloomFilter {
    * @param position - Counter position
    * @returns Current counter value (0 to maxCounterValue)
    */
-  _getCounter(position: number) {
+  private _getCounter(position: number) {
     // Calculate which byte contains this counter
     const byteIndex = Math.floor(position / this.countersPerByte);
 
@@ -97,7 +98,7 @@ export class CountingBloomFilter {
    * @param position - Counter position
    * @param value - New counter value (0 to maxCounterValue)
    */
-  _setCounter(position: number, value: number) {
+  private _setCounter(position: number, value: number) {
     // Ensure value doesn't exceed our counter capacity
     value = Math.min(value, this.maxCounterValue);
     value = Math.max(value, 0);
@@ -122,7 +123,7 @@ export class CountingBloomFilter {
    * @param position - Counter position to increment
    * @returns True if increment succeeded, false if counter was at maximum
    */
-  _incrementCounter(position: number) {
+  private _incrementCounter(position: number) {
     const currentValue = this._getCounter(position);
 
     if (currentValue >= this.maxCounterValue) {
@@ -141,10 +142,10 @@ export class CountingBloomFilter {
    * Decrement a counter at the specified position.
    * This is the core operation for removing items.
    *
-   * @param {number} position - Counter position to decrement
-   * @returns {boolean} True if decrement succeeded, false if counter was already 0
+   * @param position - Counter position to decrement
+   * @returns True if decrement succeeded, false if counter was already 0
    */
-  _decrementCounter(position: number) {
+  private _decrementCounter(position: number) {
     const currentValue = this._getCounter(position);
 
     if (currentValue === 0) {
@@ -160,7 +161,7 @@ export class CountingBloomFilter {
    * Use the optimized FNV-1a hash function from the previous implementation.
    * This maintains the same high performance we achieved earlier.
    */
-  _getHashValues(item: string) {
+  private _getHashValues(item: string) {
     const hash1 = this._fnv1aHash(item, 0x811c9dc5);
     const hash2 = this._fnv1aHash(item, 0xcbf29ce4);
 
@@ -176,7 +177,7 @@ export class CountingBloomFilter {
   /**
    * FNV-1a hash implementation (same as optimized version)
    */
-  _fnv1aHash(str: string, offsetBasis: number) {
+  private _fnv1aHash(str: string, offsetBasis: number) {
     const FNV_PRIME = 0x01000193;
     let hash = offsetBasis;
 

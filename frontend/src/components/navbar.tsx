@@ -4,15 +4,22 @@ import { MessageCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import ToggleTheme from "./toggle-theme";
 import { useAuthActions, useAuthModal, useUser } from "@/stores/auth-store";
+import { useNavigate } from "react-router";
 
 const Navbar = () => {
   const user = useUser();
+  const navigate = useNavigate();
   const { logout } = useAuthActions();
   const { setAuthType, setAuthModalOpen } = useAuthModal();
 
   const handleAuthClick = (authType: AuthType) => {
     setAuthType(authType);
     setAuthModalOpen(true);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigate("/");
   };
 
   return (
@@ -23,7 +30,7 @@ const Navbar = () => {
         </div>
         <div className="text-foreground">
           <div className="font-bold text-lg">Sync</div>
-          <div className="text-xs text-muted-foreground -mt-1">
+          <div className="hidden sm:block text-xs text-muted-foreground -mt-1">
             Connect • Collaborate • Create
           </div>
         </div>
@@ -32,7 +39,7 @@ const Navbar = () => {
         {user ? (
           <>
             <span>{user.username}</span>
-            <Button onClick={logout}>Logout</Button>
+            <Button onClick={handleLogout}>Logout</Button>
           </>
         ) : (
           <>

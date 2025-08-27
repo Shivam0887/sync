@@ -14,10 +14,12 @@ import { env } from "@/config/env.js";
 import redis from "@/config/redis-db.js";
 import {
   AuthError,
+  AuthorizationError,
   ConflictError,
   NotFoundError,
   ValidationError,
 } from "@shared/dist/error-handler/index.js";
+import { formatSeconds } from "@/lib/utils/index.js";
 
 export const usernameSchema = z
   .string()
@@ -43,6 +45,8 @@ const JWT_ISSUER = env.JWT_ISSUER;
 
 const ACCESS_TOKEN_EXPIRY = "15m";
 const REFRESH_TOKEN_EXPIRY = "7d";
+
+const INVALID_CREDENTIALS_ATTEMPTS = 3;
 
 const generateTokens = (payload: { id: string; email: string }) => {
   const jwtid = nanoid();
@@ -72,6 +76,30 @@ const generateTokens = (payload: { id: string; email: string }) => {
   );
 
   return { accessToken, refreshToken };
+};
+
+const handleInvalidCredentials = async (email: string) => {
+  const keyExists = await redis.get(`invalid_cred:${email}`);
+
+  const remainingAttempts = keyExists
+    ? Number(keyExists) - 1
+    : INVALID_CREDENTIALS_ATTEMPTS;
+
+  if (remainingAttempts === 0) {
+    await redis.set(`invalid_cred:${email}`, 0, "EX", 2 * 60 * 60, "XX"); // Expires in 2 hours
+    throw new AuthError("Account locked for 2 hours");
+  }
+
+  if (keyExists) await redis.decr(`invalid_cred:${email}`);
+  else await redis.set(`invalid_cred:${email}`, INVALID_CREDENTIALS_ATTEMPTS);
+
+  throw new AuthError(
+    `Invalid credentials. ${
+      remainingAttempts > 1
+        ? `${remainingAttempts} attempts left`
+        : "One more wrong attempt, your account will be locked for 2 hours."
+    } `
+  );
 };
 
 // Called when access token expired
@@ -126,15 +154,12 @@ export const signup = async (
       req.body
     );
 
-    const isUserExists =
-      (
-        await db
-          .select({ id: usersTable.id })
-          .from(usersTable)
-          .where(eq(usersTable.email, email))
-      ).length === 1;
+    const isUserExists = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.email, email));
 
-    if (isUserExists) {
+    if (isUserExists.length) {
       throw new ConflictError("User with this email already exists");
     }
 
@@ -181,7 +206,7 @@ export const signin = async (
 ) => {
   try {
     const { email, password } = signinSchema.parse(req.body);
-    // Find user
+
     const users = await db
       .select()
       .from(usersTable)
@@ -192,36 +217,27 @@ export const signin = async (
     }
 
     // Check if account is locked
-    // const lockoutCheck = checkAccountLockout(user);
-    // if (lockoutCheck.locked) {
-    //   return res.status(423).json({ // 423 = Locked
-    //     error: lockoutCheck.message,
-    //     code: 'ACCOUNT_LOCKED'
-    //   });
-    // }
-
-    // Check if account is active
-    // if (!user.isActive) {
-    //   return res.status(401).json({
-    //     error: 'Account is deactivated'
-    //   });
-    // }
+    const lockoutCheck = await redis.get(`invalid_cred:${email}`);
+    if (lockoutCheck && parseInt(lockoutCheck) === 0) {
+      const remainingTTL = await redis.ttl(`invalid_cred:${email}`);
+      throw new AuthorizationError(
+        `Account locked. Try after ${formatSeconds(remainingTTL)}`
+      );
+    }
 
     // Verify password
     const isValidPassword = await argon2.verify(users[0].password, password);
 
-    if (!isValidPassword) {
-      // handleFailedLogin(user);
-      throw new AuthError("Invalid credentials");
+    if (isValidPassword) {
+      await redis.del(`invalid_cred:${email}`);
+    } else {
+      await handleInvalidCredentials(email);
     }
-
-    // Successful login
-    // handleSuccessfulLogin(user);
 
     // Generate tokens
     const tokens = generateTokens({ email, id: users[0].id });
 
-    res.status(201).json({
+    res.json({
       user: {
         id: users[0].id,
         email,
@@ -247,7 +263,7 @@ export const logout = async (
 
     // Add token to blacklist
     if (token) {
-      redis.sadd("token-blacklist", token);
+      await redis.set(`token-blacklist:${token}`, 1, "EX", 15 * 60);
     }
 
     res.json({

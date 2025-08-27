@@ -42,6 +42,9 @@ export default function ChatHeroSection() {
       <Navbar />
 
       <main className="transition-transform relative flex-1 z-10 flex flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="sm:hidden text-muted-foreground">
+          Connect • Collaborate • Create
+        </div>
         <div
           className={`inline-flex items-center px-6 py-3 rounded-full bg-primary/10 backdrop-blur-sm border border-primary/20 text-primary text-sm mb-8 font-medium shadow-lg shadow-primary/10 transition-all duration-1000`}
         >

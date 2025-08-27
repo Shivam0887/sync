@@ -53,7 +53,7 @@ export const authenticateToken = async (
     }
 
     // Check if token is blacklisted (logged out)
-    if (await redis.sismember("token-blacklist", token)) {
+    if (await redis.get(`token-blacklist:${token}`)) {
       throw new AuthError("Token has been revoked");
     }
 

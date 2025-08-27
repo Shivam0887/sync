@@ -3,9 +3,10 @@ import { db } from "@/db/index.js";
 import { usersTable } from "@/db/schema.js";
 import { PrefixTree } from "@/lib/prefix-search/index.js";
 import { NotFoundError } from "@shared/dist/error-handler/index.js";
-import { DrizzleError, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { NextFunction, Request, Response } from "express";
 import { usernameSchema } from "./auth.controller.js";
+import { IUser } from "@/types/index.js";
 
 export const userProfile = async (
   req: Request,
@@ -13,21 +14,23 @@ export const userProfile = async (
   next: NextFunction
 ) => {
   try {
+    const userId = (req as any).user.id;
     const user = await db
-      .select()
+      .select({
+        id: usersTable.id,
+        email: usersTable.email,
+        username: usersTable.username,
+        avatarUrl: usersTable.avatarUrl,
+      })
       .from(usersTable)
-      .where(eq(usersTable.id, (req as any).user.id));
+      .where(eq(usersTable.id, userId));
 
     if (user.length === 0) {
-      throw new NotFoundError("User not found");
+      throw new NotFoundError(`User id: ${userId} not found`);
     }
 
-    res.status(200).json({
-      user: {
-        id: user[0].id,
-        email: user[0].email,
-        username: user[0].username,
-      },
+    res.json({
+      user: user[0],
     });
   } catch (error) {
     console.error("Profile fetch error");
@@ -35,34 +38,49 @@ export const userProfile = async (
   }
 };
 
-export const updateUsername = (searchUsernamePrefix: PrefixTree) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+export const updateUsername =
+  (searchUsernamePrefix: PrefixTree<IUser>) =>
+  async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const userId = (req as any).user.id;
+
       const user = await db
-        .select({ id: usersTable.id })
+        .select({
+          avatarUrl: usersTable.avatarUrl,
+          prevUsername: usersTable.username,
+        })
         .from(usersTable)
-        .where(eq(usersTable.id, (req as any).user.id));
+        .where(eq(usersTable.id, userId));
 
       if (user.length === 0) {
-        throw new NotFoundError("User not found");
+        throw new NotFoundError(`User id: ${userId} not found`);
       }
 
-      const username = usernameSchema.parse(req.params?.username).toLowerCase();
+      const username = usernameSchema
+        .parse(req.params.username)
+        .trim()
+        .toLowerCase();
 
       await db
         .update(usersTable)
-        .set({ username: username })
-        .where(eq(usersTable.id, user[0].id));
+        .set({ username })
+        .where(eq(usersTable.id, userId));
 
-      await redis.sadd("sync_username", username);
-      searchUsernamePrefix.insert(username, user[0].id);
+      await redis.srem("username", user[0].prevUsername);
+      await redis.sadd("username", username);
 
-      res.status(200).json({
+      searchUsernamePrefix.delete(user[0].prevUsername);
+      searchUsernamePrefix.insert(username, {
+        username,
+        id: userId,
+        avatarUrl: user[0].avatarUrl,
+      });
+
+      res.json({
         message: "Username updated",
       });
     } catch (error) {
-      console.error("Username error");
+      console.error("[Username update] error");
       next(error);
     }
   };
-};

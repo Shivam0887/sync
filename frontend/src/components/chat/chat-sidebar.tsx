@@ -25,18 +25,23 @@ import { useFetchConversations } from "@/stores/chat-store";
 import { useSocketState } from "@/providers/socket-provider";
 import { toastErrorHandler } from "@/lib/utils";
 import type { IParticipant } from "@/types/chat.types";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface ChatSidebarProps {
   onFindFriends: () => void;
   directParticipants: IParticipant[];
+  toggleSidebar: () => void;
 }
 
 const ChatSidebar = ({
   onFindFriends,
   directParticipants,
+  toggleSidebar,
 }: ChatSidebarProps) => {
   const [query, setQuery] = useState("");
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
+
+  const isMobile = useIsMobile();
 
   const user = useUser();
   const { status: socketConnectionStatus } = useSocketState();
@@ -156,6 +161,7 @@ const ChatSidebar = ({
                   <div key={id}>
                     <Link
                       to={`/chat/${id}`}
+                      onClick={() => isMobile && toggleSidebar()}
                       className="flex items-center p-2 w-full rounded-lg hover:bg-sidebar-accent transition-colors"
                     >
                       <div className="relative">

@@ -1,4 +1,4 @@
-import { RateLimitError } from "@shared/src/error-handler";
+import { NotFoundError, RateLimitError } from "@shared/src/error-handler";
 import type { NextFunction, Request, Response } from "express";
 
 interface RateLimitDetails {
@@ -30,10 +30,28 @@ function setRateLimitHeaders(res: Response, details: RateLimitDetails) {
     "X-RateLimit-Reset": details.reset,
     "Retry-After": details.retryAfter,
   });
+  res.setHeader(
+    "Access-Control-Expose-Headers",
+    "X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After"
+  );
 }
 
 // --- Fixed Window Rate Limiter ---
 const requestMap = new Map<string, FixedWindowRecord>();
+
+type TRateLimiterRetureType = (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => void;
+
+export interface RateLimiterOptions {
+  limit?: number;
+  windowMs?: number;
+  message?: string;
+  clientIdentifier?: (req: Request) => string;
+  path?: string | RegExp;
+}
 
 /**
  * Fixed Window Rate Limiter
@@ -42,27 +60,35 @@ const requestMap = new Map<string, FixedWindowRecord>();
  * @param message - Response to return after limit is reached.
  * @param clientIdentifier - Identify users (defaults to IP address).
  */
-export const rateLimiter = (
-  limit = 10,
-  windowMs = 60000,
-  message = "Too many requests",
-  clientIdentifier?: (req: Request) => string
-) => {
+export function rateLimiter(
+  options: RateLimiterOptions
+): TRateLimiterRetureType {
+  const {
+    limit = 10,
+    message = "Too many requests",
+    windowMs = 60 * 1000,
+    clientIdentifier,
+    path,
+  } = options;
+
   // Input validation with better defaults
   const validLimit = Math.max(1, limit);
   const validWindowMs = Math.max(1000, windowMs); // Minimum 1 second
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const identifier = clientIdentifier?.(req) ?? req.ip ?? "unknown";
-    const now = Date.now();
+    if (path && req.path.match(path) === null) {
+      next();
+      return;
+    }
 
-    // Align window to clock time for more predictable behavior
-    const windowStart = Math.floor(now / validWindowMs) * validWindowMs;
+    const identifier = clientIdentifier?.(req) ?? req.ip ?? "unknown";
+
+    const windowStart = Date.now();
 
     const record = requestMap.get(identifier);
 
     // Check if we're in a new window or no record exists
-    if (!record || record.windowStart !== windowStart) {
+    if (!record || record.windowStart + windowMs < windowStart) {
       requestMap.set(identifier, { count: 1, windowStart });
 
       const details = {
@@ -86,10 +112,10 @@ export const rateLimiter = (
     const details = {
       limit: validLimit.toString(),
       remaining: remaining.toString(),
-      reset: (windowStart + validWindowMs).toString(),
+      reset: (record.windowStart + validWindowMs).toString(),
       retryAfter:
         record.count > validLimit
-          ? (windowStart + validWindowMs - now).toString()
+          ? (record.windowStart + validWindowMs - windowStart).toString()
           : "0",
     };
 
@@ -101,7 +127,7 @@ export const rateLimiter = (
 
     next();
   };
-};
+}
 
 // --- Sliding Window Log Rate Limiter ---
 const slidingWindowLogs = new Map<string, number[]>();

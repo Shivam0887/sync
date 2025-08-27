@@ -13,3 +13,9 @@ export interface IMessage {
   content: string;
   timestamp: Date;
 }
+
+export interface IUser {
+  id: string;
+  username: string;
+  avatarUrl: string | null;
+}

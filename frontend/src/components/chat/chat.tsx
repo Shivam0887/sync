@@ -4,8 +4,10 @@ import ChatMessages from "@/components/chat/chat-messages";
 import { toastErrorHandler } from "@/lib/utils";
 import { useUser } from "@/stores/auth-store";
 import { useConversations } from "@/stores/chat-store";
-import { Search } from "lucide-react";
+import { Menu, Search } from "lucide-react";
 import { useNavigate, useOutletContext, useParams } from "react-router";
+import { Button } from "../ui/button";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface IOutletContext {
   sidebarOpen: boolean;
@@ -19,6 +21,7 @@ const Chat = () => {
 
   const conversation = useConversations();
   const user = useUser();
+  const isMobile = useIsMobile();
 
   const { onFindFriends, toggleSidebar } = useOutletContext<IOutletContext>();
 
@@ -30,7 +33,17 @@ const Chat = () => {
 
   if (!chatId) {
     return (
-      <div className="h-full w-full flex flex-col justify-center items-center gap-6">
+      <div className="relative h-full w-full flex flex-col justify-center items-center gap-6">
+        {isMobile && (
+          <Button
+            onClick={toggleSidebar}
+            variant="ghost"
+            size="sm"
+            className="absolute left-4 top-4 mr-3 md:mr-2 text-foreground/80 hover:text-foreground hover:bg-white/5"
+          >
+            <Menu size={18} />
+          </Button>
+        )}
         <div>
           <Search className="size-8 text-muted-foreground" />
         </div>

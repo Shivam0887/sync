@@ -3,6 +3,7 @@ import type { IAuthState, IAuthAction } from "@/types/auth.types";
 import { createSelectors, toastErrorHandler } from "@/lib/utils";
 import { apiRequest } from "@/services/api-request";
 import { create } from "zustand";
+import { format } from "date-fns";
 
 const useAuthStoreBase = create<IAuthState & IAuthAction>()((set, get) => ({
   user: null,
@@ -32,7 +33,20 @@ const useAuthStoreBase = create<IAuthState & IAuthAction>()((set, get) => ({
 
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data?.message || "Login failed");
+      if (!response.ok) {
+        if (response.status === 429) {
+          const resetAt = response.headers.get("x-ratelimit-reset");
+          let message = data.message as string;
+
+          if (resetAt) {
+            message += `. \nRetry after ${format(
+              new Date(Number(resetAt)),
+              "dd/MM/yy hh:mm:ss aa"
+            )}`;
+          }
+          throw new Error(message);
+        } else throw new Error(data?.message || "Login failed");
+      }
 
       localStorage.setItem("accessToken", data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
@@ -91,10 +105,6 @@ const useAuthStoreBase = create<IAuthState & IAuthAction>()((set, get) => ({
       localStorage.removeItem("refreshToken");
 
       set({ loading: false });
-
-      if (typeof window !== "undefined") {
-        window.location.replace("/");
-      }
     }
   },
 
