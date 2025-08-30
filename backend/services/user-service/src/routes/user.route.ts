@@ -39,20 +39,23 @@ let isDbUserLoaded = false;
 
 userRouter.get("/profile", userProfile);
 
-userRouter
-  .use("/username/:username")
-  .get("/search", searchUsername(searchUsernamePrefix))
-  .get(
-    "/check",
-    checkUsernameAvailability(bloomFilter, searchUsernamePrefix),
-    (req: Request, res: Response) => {
-      res.json({ message: "Username available" });
-    }
-  )
-  .patch(
-    "update",
-    checkUsernameAvailability(bloomFilter, searchUsernamePrefix),
-    updateUsername(searchUsernamePrefix)
-  );
+userRouter.get(
+  "/username/:username/search",
+  searchUsername(searchUsernamePrefix)
+);
+
+userRouter.get(
+  "/username/:username/check",
+  checkUsernameAvailability(bloomFilter, searchUsernamePrefix),
+  (req: Request, res: Response) => {
+    res.json({ message: "Username available" });
+  }
+);
+
+userRouter.patch(
+  "/username/:username/update",
+  checkUsernameAvailability(bloomFilter, searchUsernamePrefix),
+  updateUsername(searchUsernamePrefix)
+);
 
 export default userRouter;

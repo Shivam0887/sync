@@ -14,31 +14,27 @@ export interface IParticipant {
   role: "admin" | "member";
 }
 
-export interface IMessageBase {
+export interface Message {
   id: string;
   content: string;
-  timestamp: Date;
   status: MessageStatus;
   senderId: string;
+  isEdited: boolean;
+  replyToId: string | null;
+  createdAt: Date;
+  editedAt: Date | null;
+  messageType: "TEXT" | "IMAGE" | "VIDEO" | "VOICE" | "FILE";
+  receiverId: string | null;
 }
-
-export type Message = IMessageBase &
-  (
-    | {
-        type: "group";
-      }
-    | {
-        type: "direct";
-        receiverId: string;
-      }
-  );
 
 export interface IConversationBase {
   id: string;
   unread: number;
-  lastMessage: string;
-  timestamp: Date | null;
   participants: IParticipant[];
+  lastMessage: {
+    content: string;
+    createdAt: Date;
+  } | null;
 }
 
 export interface IGroupConversation {
@@ -46,7 +42,7 @@ export interface IGroupConversation {
   name: string;
   description: string | null;
   avatarUrl: string | null;
-  inviteLink: string | null;
+  inviteLinkToken: string | null;
 }
 
 export type Conversation = IConversationBase &
@@ -71,26 +67,27 @@ export interface IChatState {
 
 export interface IChatActions {
   // State setters
-  addMessage: (chatId: string, message: Message) => void;
-  addMembers: (chatId: string, members: IParticipant[]) => void;
-  removeMembers: (chatId: string, members: string[]) => void;
-  updateMessageStatus: (
-    chatId: string,
-    messageId: string,
-    status: MessageStatus
-  ) => void;
-  updateMessageId: (chatId: string, tempId: string, newId: string) => void;
-  updateTypingStatus: (
-    chatId: string,
-    userId: string,
-    isTyping: boolean
-  ) => void;
-  updateUserPresence: (
-    userId: string,
-    status: UserPresence,
-    lastSeen: string
-  ) => void;
-
-  // // Utility
-  // clearChat: () => void;
+  addMessage: (args: { chatId: string; message: Message }) => void;
+  addMembers: (args: { chatId: string; members: IParticipant[] }) => void;
+  removeMembers: (args: { chatId: string; members: string[] }) => void;
+  updateMessageStatus: (args: {
+    chatId: string;
+    messageId: string;
+    status: MessageStatus;
+  }) => void;
+  updateMessageId: (args: {
+    chatId: string;
+    tempId: string;
+    newId: string;
+  }) => void;
+  updateTypingStatus: (args: {
+    chatId: string;
+    userId: string;
+    isTyping: boolean;
+  }) => void;
+  updateUserPresence: (args: {
+    userId: string;
+    status: UserPresence;
+    lastSeen: string;
+  }) => void;
 }

@@ -1,15 +1,15 @@
-import { useAuthModal, useAuthStatus } from "@/stores/auth-store";
+import { useAuthModal, useUser } from "@/stores/auth-store";
 import { useEffect } from "react";
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isAuthenticated, loading } = useAuthStatus();
+  const { data: user, isLoading } = useUser(true);
   const { setAuthModalOpen } = useAuthModal();
 
   useEffect(() => {
-    setAuthModalOpen(!isAuthenticated && !loading);
-  }, [isAuthenticated, loading, setAuthModalOpen]);
+    setAuthModalOpen(!user && !isLoading);
+  }, [user, isLoading, setAuthModalOpen]);
 
-  return !isAuthenticated ? null : children;
+  return !user ? null : children;
 };
 
 export default ProtectedRoute;

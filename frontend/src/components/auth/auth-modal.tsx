@@ -13,7 +13,8 @@ import { Button } from "../ui/button";
 import { useAuthModal } from "@/stores/auth-store";
 
 const AuthModal = () => {
-  const { isOpen, setAuthModalOpen, authType, setAuthType } = useAuthModal();
+  const { authModalOpen, setAuthModalOpen, authType, setAuthType } =
+    useAuthModal();
 
   let title = "Sign in to your account";
   let description = "create a new account";
@@ -26,7 +27,7 @@ const AuthModal = () => {
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={setAuthModalOpen}>
+    <Dialog open={authModalOpen} onOpenChange={setAuthModalOpen}>
       <DialogContent className="p-0 overflow-y-auto min-h-60 gap-0">
         <DialogHeader className="mt-6">
           <DialogTitle className="flex flex-col items-center gap-2">

@@ -14,9 +14,8 @@ import { useNavigate } from "react-router";
 import { toastErrorHandler } from "@/lib/utils";
 import { useUser } from "@/stores/auth-store";
 import { apiRequest } from "@/services/api-request";
-import { useMutation } from "@tanstack/react-query";
-import type { IParticipant } from "@/types/chat.types";
-import { useChatActions } from "@/stores/chat-store";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { chatQueryKeys } from "@/stores/chat-store";
 
 interface FindFriendsProps {
   open: boolean;
@@ -30,9 +29,9 @@ const FindFriends = ({ open, onClose }: FindFriendsProps) => {
   );
 
   const router = useNavigate();
-  const user = useUser();
+  const { data: user } = useUser();
 
-  const { addMembers } = useChatActions();
+  const queryClient = useQueryClient();
 
   const handleUsernameSearch = useMutation({
     mutationKey: ["search_username"],
@@ -55,24 +54,24 @@ const FindFriends = ({ open, onClose }: FindFriendsProps) => {
   });
 
   const handleUserAdd = useMutation({
-    mutationFn: async (
-      friendId: string
-    ): Promise<{ chatId: string; participant: IParticipant }> => {
-      const res = await apiRequest("/chat/direct", {
+    mutationFn: async (friendId: string) => {
+      const res = await apiRequest(`/chat/${friendId}/direct`, {
         method: "POST",
-        body: JSON.stringify({ otherUserId: friendId }),
       });
 
       if (!res.ok) throw new Error("Failed to create or get chat");
 
-      return await res.json();
+      const { chatId } = await res.json();
+      return chatId as string;
     },
-    onSettled: (data, error) => {
+    onSettled: async (chatId, error) => {
       if (error) {
         toastErrorHandler({ error });
-      } else if (data) {
-        addMembers(data.chatId, [data.participant]);
-        router(`/chat/${data.chatId}`);
+      } else if (chatId) {
+        await queryClient.invalidateQueries({
+          queryKey: chatQueryKeys.conversations,
+        });
+        router(`/chat/${chatId}`);
       }
     },
   });
@@ -83,7 +82,7 @@ const FindFriends = ({ open, onClose }: FindFriendsProps) => {
         <DialogHeader>
           <DialogTitle>Find Friends</DialogTitle>
           <DialogDescription>
-            Search for people by username and send them a friend request.
+            Search for people by username and add them to your friend-list.
           </DialogDescription>
         </DialogHeader>
 

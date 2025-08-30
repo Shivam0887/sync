@@ -1,4 +1,5 @@
 import { z } from "zod";
+import * as Sentry from "@sentry/node";
 import { NextFunction, Request, Response } from "express";
 
 import { emailSchema, passwordSchema } from "@/lib/schema/zod-schema.js";
@@ -19,7 +20,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "@shared/dist/error-handler/index.js";
-import { formatSeconds } from "@/lib/utils/index.js";
+import { formatSeconds, redisKeys } from "@/lib/utils/index.js";
 
 export const usernameSchema = z
   .string()
@@ -47,6 +48,8 @@ const ACCESS_TOKEN_EXPIRY = "15m";
 const REFRESH_TOKEN_EXPIRY = "7d";
 
 const INVALID_CREDENTIALS_ATTEMPTS = 3;
+
+const API_BASE_URL = "http://localhost:8000/api";
 
 const generateTokens = (payload: { id: string; email: string }) => {
   const jwtid = nanoid();
@@ -79,19 +82,21 @@ const generateTokens = (payload: { id: string; email: string }) => {
 };
 
 const handleInvalidCredentials = async (email: string) => {
-  const keyExists = await redis.get(`invalid_cred:${email}`);
+  const invalidCredKey = redisKeys.invalidCredentials(email);
+
+  const keyExists = await redis.get(invalidCredKey);
 
   const remainingAttempts = keyExists
     ? Number(keyExists) - 1
     : INVALID_CREDENTIALS_ATTEMPTS;
 
   if (remainingAttempts === 0) {
-    await redis.set(`invalid_cred:${email}`, 0, "EX", 2 * 60 * 60, "XX"); // Expires in 2 hours
+    await redis.set(invalidCredKey, 0, "EX", 2 * 60 * 60, "XX"); // Expires in 2 hours
     throw new AuthError("Account locked for 2 hours");
   }
 
-  if (keyExists) await redis.decr(`invalid_cred:${email}`);
-  else await redis.set(`invalid_cred:${email}`, INVALID_CREDENTIALS_ATTEMPTS);
+  if (keyExists) await redis.decr(invalidCredKey);
+  else await redis.set(invalidCredKey, INVALID_CREDENTIALS_ATTEMPTS);
 
   throw new AuthError(
     `Invalid credentials. ${
@@ -122,7 +127,7 @@ export const refreshToken = async (
 
     // Find user
     const user = await db
-      .select()
+      .select({ id: usersTable.id, email: usersTable.email })
       .from(usersTable)
       .where(eq(usersTable.id, decoded.id));
 
@@ -172,27 +177,38 @@ export const signup = async (
 
     const hashedPassword = await argon2.hash(password);
 
-    const user = (
-      await db
-        .insert(usersTable)
-        .values({
-          email: email.toLowerCase(),
-          password: hashedPassword,
-          username: username.toLowerCase(),
-        })
-        .returning({
-          id: usersTable.id,
-          avatarUrl: usersTable.avatarUrl,
-          username: usersTable.username,
-        })
-    )[0];
+    const users = await db
+      .insert(usersTable)
+      .values({
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        username: username.toLowerCase(),
+      })
+      .returning({
+        id: usersTable.id,
+        avatarUrl: usersTable.avatarUrl,
+        username: usersTable.username,
+      });
 
     const tokens = generateTokens({
-      id: user.id,
+      id: users[0].id,
       email,
     });
 
-    res.status(201).json({ ...tokens, user: { ...user, email } });
+    // Update the cache list of direct and group chats for an authenticated user
+    fetch(`${API_BASE_URL}/chat/${users[0].id}/connections`, {
+      method: "POST",
+    }).catch((error) => {
+      Sentry.withScope((scope) => {
+        scope.setContext("user-connections", {
+          [users[0].id]:
+            "Update the cache list of direct and group chats for an authenticated user",
+        });
+        scope.captureException(error);
+      });
+    });
+
+    res.status(201).json({ ...tokens, user: { ...users[0], email } });
   } catch (error) {
     console.error("Signup error");
     next(error);
@@ -216,10 +232,12 @@ export const signin = async (
       throw new AuthError("Invalid credentials");
     }
 
+    const invalidCredKey = redisKeys.invalidCredentials(email);
+
     // Check if account is locked
-    const lockoutCheck = await redis.get(`invalid_cred:${email}`);
+    const lockoutCheck = await redis.get(invalidCredKey);
     if (lockoutCheck && parseInt(lockoutCheck) === 0) {
-      const remainingTTL = await redis.ttl(`invalid_cred:${email}`);
+      const remainingTTL = await redis.ttl(invalidCredKey);
       throw new AuthorizationError(
         `Account locked. Try after ${formatSeconds(remainingTTL)}`
       );
@@ -229,13 +247,27 @@ export const signin = async (
     const isValidPassword = await argon2.verify(users[0].password, password);
 
     if (isValidPassword) {
-      await redis.del(`invalid_cred:${email}`);
+      await redis.del(invalidCredKey);
     } else {
       await handleInvalidCredentials(email);
     }
 
     // Generate tokens
     const tokens = generateTokens({ email, id: users[0].id });
+
+    // Re-fetch on each signin for fresh cache
+    // Update the cache list of direct and group chats for an authenticated user
+    fetch(`${API_BASE_URL}/chat/${users[0].id}/connections`, {
+      method: "POST",
+    }).catch((error) => {
+      Sentry.withScope((scope) => {
+        scope.setContext("user-connections", {
+          [users[0].id]:
+            "Update the cache list of direct and group chats for an authenticated user",
+        });
+        scope.captureException(error);
+      });
+    });
 
     res.json({
       user: {
@@ -261,16 +293,24 @@ export const logout = async (
     const authHeader = req.headers.authorization;
     const token = authHeader?.split(" ")[1];
 
+    const userId = (res as any).user.id;
+
+    if (userId) {
+      // Delete the cache list of direct and group chats during logout
+      await redis.del(redisKeys.userChatGroups(userId));
+      await redis.del(redisKeys.userContacts(userId));
+    }
+
     // Add token to blacklist
     if (token) {
-      await redis.set(`token-blacklist:${token}`, 1, "EX", 15 * 60);
+      await redis.set(redisKeys.tokenBlacklist(token), 1, "EX", 15 * 60);
     }
 
     res.json({
       message: "Logged out successfully",
     });
   } catch (error) {
-    console.error("Logout error");
+    console.log("Logout error", error);
     next(error);
   }
 };

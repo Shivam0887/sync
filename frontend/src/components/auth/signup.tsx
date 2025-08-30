@@ -18,7 +18,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { signupSchema } from "@/lib/schema";
 import { toastErrorHandler } from "@/lib/utils";
-import { toast } from "sonner";
 import { useAuthActions } from "@/stores/auth-store";
 import { apiRequest } from "@/services/api-request";
 
@@ -58,18 +57,7 @@ const Signup = () => {
         throw new Error("Password & confirm-password didn't matched");
       }
 
-      const response = await signup(
-        values.email,
-        values.username,
-        values.password,
-        values.confirmPassword
-      );
-
-      if (!response.success) {
-        throw new Error(response.error);
-      }
-
-      toast(response.message);
+      signup.mutate(values);
     } catch (error) {
       toastErrorHandler({ error });
     }

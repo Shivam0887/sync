@@ -10,6 +10,7 @@ import { ConflictError } from "@shared/dist/error-handler/index.js";
 import { PrefixTree } from "@/lib/prefix-search/index.js";
 import { usernameSchema } from "@/controllers/auth.controller.js";
 import { IUser } from "@/types/index.js";
+import { redisKeys } from "@/lib/utils/index.js";
 
 export const checkUsernameAvailability =
   (bloomFilter: BloomFilter, searchUsernamePrefix: PrefixTree<IUser>) =>
@@ -30,7 +31,7 @@ export const checkUsernameAvailability =
 
       if (isUsernamePrefixed) throw new ConflictError("Username already exists");
 
-      const isUsernameInCache = await redis.sismember("username", username);
+      const isUsernameInCache = await redis.sismember(redisKeys.username(), username);
 
       if (isUsernameInCache) throw new ConflictError("Username already exists");
 

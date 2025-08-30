@@ -5,7 +5,7 @@ import { toastErrorHandler } from "@/lib/utils";
 import { useUser } from "@/stores/auth-store";
 import { useConversations } from "@/stores/chat-store";
 import { Menu, Search } from "lucide-react";
-import { useNavigate, useOutletContext, useParams } from "react-router";
+import { useOutletContext, useParams } from "react-router";
 import { Button } from "../ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -17,17 +17,15 @@ interface IOutletContext {
 
 const Chat = () => {
   const { chatId } = useParams();
-  const router = useNavigate();
 
   const conversation = useConversations();
-  const user = useUser();
+  const { data: user } = useUser();
   const isMobile = useIsMobile();
 
   const { onFindFriends, toggleSidebar } = useOutletContext<IOutletContext>();
 
   if (!user) {
     toastErrorHandler({ defaultErrorMsg: "Not authenticated" });
-    router("/");
     return;
   }
 

@@ -12,7 +12,7 @@ const JoinGroupPage = () => {
     "loading"
   );
   const navigate = useNavigate();
-  const user = useUser();
+  const { data: user } = useUser();
   const { addMembers } = useChatActions();
 
   useEffect(() => {
@@ -30,7 +30,7 @@ const JoinGroupPage = () => {
         const member = user!;
 
         setStatus("success");
-        addMembers(data.groupId, [{ ...member, role: "member" }]);
+        addMembers({ chatId: data.groupId, members: [{ ...member, role: "member" }] });
         navigate(`/chat/${data.groupId}`);
       } catch (error) {
         toastErrorHandler({ error });

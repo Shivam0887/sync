@@ -66,10 +66,10 @@ const AddGroupMembersDialog = ({
       } else {
         toast.success("Users added successfully");
 
-        addMembers(
-          groupId,
-          directParticipants.filter(({ id }) => selectedUsers.has(id))
-        );
+        addMembers({
+          chatId: groupId,
+          members: directParticipants.filter(({ id }) => selectedUsers.has(id))
+        });
         setIsOpen(false);
       }
     },

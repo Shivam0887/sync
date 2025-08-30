@@ -62,7 +62,7 @@ const ChatInput = ({
 
   useEffect(() => {
     if (conversationType === "direct" && receiverId) {
-      onUserTyping(chatId, receiverId, isTyping);
+      onUserTyping({ chatId, userId: receiverId, isTyping });
     }
   }, [conversationType, receiverId, chatId, isTyping, onUserTyping]);
 
@@ -70,20 +70,26 @@ const ChatInput = ({
     e.preventDefault();
     if (!content.trim()) return;
 
-    const message: Partial<Message> = {
-      id: nanoid(),
+    if (conversationType === "direct" && !receiverId) return;
+
+    const message: Message = {
+      id: nanoid(), // temporary id
       content,
-      timestamp: new Date(),
       senderId: userId,
       status: "SENDING",
-      type: conversationType,
+      messageType: "TEXT",
+      isEdited: false,
+      replyToId: null,
+      editedAt: null,
+      receiverId: null,
+      createdAt: new Date(),
     };
 
-    if (message.type === "direct" && receiverId) {
+    if (conversationType === "direct") {
       message.receiverId = receiverId;
     }
 
-    onMessageSend(chatId, message as Message);
+    onMessageSend({ chatId, message, conversationType });
     setContent("");
   };
 

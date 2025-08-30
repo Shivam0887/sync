@@ -1,15 +1,16 @@
 import { env } from "./config/env.js";
 
-import express from "express";
-import router from "./routes/index.js";
 import cors from "cors";
-
+import * as z from "zod/v4-mini";
+import express from "express";
 import { createServer } from "http";
+
+import router from "./routes/index.js";
+
+import initializeSocketManager from "./socket/socket-manager.js";
 
 import { AuthError } from "@shared/dist/error-handler/index.js";
 import { errorHandler } from "@shared/dist/error-handler/error.middleware.js";
-import initializeSocketManager from "./socket/socket-manager.js";
-import z from "zod/v4";
 
 const app = express();
 const httpServer = createServer(app);
@@ -20,10 +21,10 @@ const decodedUserSchema = z.object({
 });
 
 const internalEndPoints = [
-  { path: /\/chat\/groups\/.*/, allowedMethods: ["GET"] },
+  { path: /\/chat\/.*\/connections/, allowedMethods: ["POST"] },
 ];
 
-initializeSocketManager(httpServer);
+const socketManagerInstance = initializeSocketManager(httpServer);
 
 app.use(
   cors({
@@ -35,10 +36,7 @@ app.use(
 );
 
 app.get("/api/health", (req, res) => {
-  res.status(200).json({
-    message: "Chat service is running",
-    timestamp: new Date().toISOString(),
-  });
+  res.status(204).end();
 });
 
 app.use(
@@ -75,3 +73,6 @@ app.use(errorHandler);
 httpServer.listen(env.PORT, () => {
   console.log(`Chat service listening at PORT ${env.PORT}`);
 });
+
+process.on("SIGINT", socketManagerInstance.cleanup);
+process.on("SIGTERM", socketManagerInstance.cleanup);

@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.0.1",
+    "@hookform/resolvers": "^5.2.1",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-dialog": "^1.1.14",
@@ -34,12 +34,12 @@
     "next-themes": "^0.4.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-hook-form": "^7.56.4",
+    "react-hook-form": "^7.62.0",
     "react-router": "^7.6.0",
     "socket.io-client": "^4.8.1",
     "sonner": "^2.0.5",
     "tailwind-merge": "^3.3.0",
-    "zod": "^3.25.30",
+    "zod": "^4.1.4",
     "zustand": "^5.0.7"
   },
   "devDependencies": {

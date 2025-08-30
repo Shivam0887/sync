@@ -115,7 +115,7 @@ const ChatMessage = ({
             }`}
           >
             <span className="inline-flex items-center gap-2">
-              {format(message.timestamp, "h:mm a")}
+              {format(message.createdAt, "h:mm a")}
 
               {isSelf && (
                 <span
@@ -166,7 +166,7 @@ const ChatMessages: React.FC<{
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
           const [senderId, messageId] = entry.target.id.split(":");
-          onMessageRead(chatId, senderId, messageId);
+          onMessageRead({ chatId, senderId, messageId });
           observer.unobserve(entry.target);
         }
       });
@@ -193,7 +193,7 @@ const ChatMessages: React.FC<{
   const groupedMessages: { [key: string]: Message[] } = {};
 
   (messages ?? []).forEach((message) => {
-    const dateKey = format(message.timestamp, "yyyy-MM-dd");
+    const dateKey = format(message.createdAt, "yyyy-MM-dd");
     if (!groupedMessages[dateKey]) {
       groupedMessages[dateKey] = [];
     }
@@ -232,7 +232,7 @@ const ChatMessages: React.FC<{
               </div>
               {messagesGroup.map((message, i) => (
                 <ChatMessage
-                  key={getTime(message.timestamp)}
+                  key={getTime(message.createdAt)}
                   playSendMessageSound={playSendMessageSound}
                   conversation={conversation[chatId]}
                   message={message}

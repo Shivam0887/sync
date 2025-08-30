@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { NextFunction, Request, Response } from "express";
 import { usernameSchema } from "./auth.controller.js";
 import { IUser } from "@/types/index.js";
+import { redisKeys } from "@/lib/utils/index.js";
 
 export const userProfile = async (
   req: Request,
@@ -66,8 +67,8 @@ export const updateUsername =
         .set({ username })
         .where(eq(usersTable.id, userId));
 
-      await redis.srem("username", user[0].prevUsername);
-      await redis.sadd("username", username);
+      await redis.srem(redisKeys.username(), user[0].prevUsername);
+      await redis.sadd(redisKeys.username(), username);
 
       searchUsernamePrefix.delete(user[0].prevUsername);
       searchUsernamePrefix.insert(username, {

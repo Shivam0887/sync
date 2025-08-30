@@ -40,7 +40,7 @@ interface GroupInfoProps {
 export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
   const linkInputRef = useRef<HTMLInputElement | null>(null);
 
-  const user = useUser();
+  const { data: user } = useUser();
   const { removeMembers } = useChatActions();
 
   const existingMembers = group.participants.map(({ id }) => id);
@@ -73,7 +73,7 @@ export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
         toastErrorHandler({ error });
       } else {
         toast.success(`${username} removed successfully`);
-        removeMembers(group.id, [userId]);
+        removeMembers({ chatId: group.id, members: [userId] });
       }
     },
   });
@@ -132,12 +132,12 @@ export const GroupInfo = ({ group, onClose, open }: GroupInfoProps) => {
                     <Input
                       ref={linkInputRef}
                       readOnly
-                      value={location.origin + group.inviteLink!}
+                      value={`${location.origin}/group/join/${group.inviteLinkToken}`}
                     />
                     <Button
                       type="button"
                       onClick={handleCopy}
-                      disabled={!group.inviteLink}
+                      disabled={!group.inviteLinkToken}
                     >
                       Copy Link
                     </Button>

@@ -18,6 +18,14 @@ export const messageStatusEnum = pgEnum("message_status", [
   "READ",
 ]);
 
+export const messageTypeEnum = pgEnum("message_type", [
+  "TEXT",
+  "IMAGE",
+  "VIDEO",
+  "VOICE",
+  "FILE",
+]);
+
 export const chatTypeEnum = pgEnum("chat_type", ["direct", "group"]);
 
 export const userPresenceEnum = pgEnum("presence_type", [
@@ -88,11 +96,11 @@ export const messagesTable = pgTable(
       .notNull()
       .references(() => usersTable.id, { onDelete: "cascade" }),
     content: text().notNull(),
-    messageType: varchar({ length: 20 }).default("text"), // 'text', 'image', 'file', etc.
-    isEdited: boolean().default(false),
+    messageType: messageTypeEnum().default("TEXT").notNull(), // 'text', 'image', 'file', etc.
+    isEdited: boolean().default(false).notNull(),
     editedAt: timestamp(), // Track when message was edited
     replyToId: uuid(), // For reply functionality
-    status: messageStatusEnum().default("SENT"),
+    status: messageStatusEnum().default("SENT").notNull(),
     createdAt: timestamp().defaultNow().notNull(),
   },
   (t) => [

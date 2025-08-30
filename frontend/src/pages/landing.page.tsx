@@ -2,38 +2,16 @@ import { ArrowRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import { useNavigate } from "react-router";
-import { useEffect } from "react";
 import Navbar from "@/components/navbar";
-import { useAuthModal, useAuthStatus } from "@/stores/auth-store";
+import { useAuthModal, useUser } from "@/stores/auth-store";
+import useNetworkChange from "@/hooks/use-network-change";
 
 export default function ChatHeroSection() {
   const navigate = useNavigate();
-  const { isAuthenticated, loading } = useAuthStatus();
+  const { isOnline } = useNetworkChange();
+
+  const { data: user, isLoading } = useUser(isOnline && true);
   const { setAuthModalOpen } = useAuthModal();
-
-  useEffect(() => {
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          observer.unobserve(entry.target);
-          const elem = entry.target as HTMLElement;
-          elem.style.opacity = "100%";
-          elem.style.translate = "0";
-        }
-      });
-    });
-
-    const elements = document.querySelectorAll(".animate-hero");
-    elements.forEach((element) => {
-      observer.observe(element);
-    });
-
-    return () => {
-      elements.forEach((element) => {
-        observer.unobserve(element);
-      });
-    };
-  }, []);
 
   return (
     <div className="h-full flex flex-col bg-background relative overflow-hidden">
@@ -52,7 +30,7 @@ export default function ChatHeroSection() {
           New Messaging Platform
         </div>
 
-        <h1 className="animate-hero opacity-0 transition-[transform_opacity] duration-1000 delay-200 font-medium text-4xl sm:text-5xl lg:text-7xl text-foreground max-w-6xl leading-tight tracking-tight">
+        <h1 className="font-medium text-4xl sm:text-5xl lg:text-7xl text-foreground max-w-6xl leading-tight tracking-tight">
           Connect your team with{" "}
           <span
             style={{
@@ -68,7 +46,7 @@ export default function ChatHeroSection() {
         </h1>
 
         <p
-          className={`animate-hero opacity-0 text-muted-foreground sm:text-lg lg:text-xl mb-10 max-w-4xl leading-relaxed font-light transition-[transform_opacity] duration-1000 delay-400`}
+          className={`text-muted-foreground sm:text-lg lg:text-xl mb-10 max-w-4xl leading-relaxed font-light`}
         >
           <span className="block mt-2">
             Secure Conversations. Enhanced Collaboration in{" "}
@@ -81,12 +59,10 @@ export default function ChatHeroSection() {
           . Real-Time Communication.{" "}
         </p>
 
-        <div
-          className={`animate-hero opacity-0 transition-[transform_opacity] duration-1000 delay-600`}
-        >
+        <div>
           <Button
             onClick={() => {
-              if (!isAuthenticated && !loading) {
+              if (!user && !isLoading) {
                 setAuthModalOpen(true);
               } else {
                 navigate("/chat");

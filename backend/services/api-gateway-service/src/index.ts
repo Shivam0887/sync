@@ -11,7 +11,13 @@ import { authenticateToken } from "./middlewares";
 
 const app = express();
 
-app.use(cors({ origin: env.CORS_ORIGIN.split(",") }), helmet());
+app.use(cors({ origin: env.CORS_ORIGIN.split(",") }));
+
+app.head("/health", (req, res) => {
+  res.status(204).end();
+});
+
+app.use(helmet());
 
 app.use(authenticateToken);
 

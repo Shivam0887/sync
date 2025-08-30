@@ -1,35 +1,26 @@
+import { Router } from "express";
+
 import {
-  addGroupMembers,
-  createGroup,
   createOrGetDirectChat,
-  regenerateInviteLink,
   getConversations,
   getMessages,
-  joinViaInviteLink,
-  sendMessage,
-  getUserGroups,
-  removeGroupMembers,
   getUserPresence,
+  updateUserConnections,
 } from "@/controllers/chat.controller.js";
-import { Router } from "express";
+import groupRouter from "./chat-groups.route.js";
 
 const chatRouter: Router = Router();
 
 chatRouter.get("/conversations", getConversations);
 
 chatRouter.get("/:chatId/messages", getMessages);
-chatRouter.post("/direct", createOrGetDirectChat);
-chatRouter.post("/send", sendMessage);
+chatRouter.post("/:otherUserId/direct", createOrGetDirectChat);
 
-chatRouter.get("/groups/:userId", getUserGroups);
+// Update the cache list of direct and group chats for an authenticated user
+chatRouter.post("/:userId/converations", updateUserConnections);
+
 chatRouter.get("/:userId/presence", getUserPresence);
 
-chatRouter.post("/groups", createGroup);
-chatRouter.post("/groups/:groupId/add", addGroupMembers);
-
-chatRouter.delete("/groups/:groupId/remove/:userId", removeGroupMembers);
-
-chatRouter.post("/groups/:groupId/invite-link", regenerateInviteLink);
-chatRouter.post("/groups/join/:inviteToken", joinViaInviteLink);
+chatRouter.get("/groups", groupRouter);
 
 export default chatRouter;

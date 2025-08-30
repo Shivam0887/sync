@@ -15,6 +15,7 @@ import {
   ValidationError,
 } from "@shared/dist/error-handler";
 import redis from "@/config/redis-db";
+import { redisKeys } from "@/lib/utils";
 
 const ACCESS_TOKEN_SECRET = env.ACCESS_TOKEN_SECRET;
 const JWT_ISSUER = env.JWT_ISSUER;
@@ -53,7 +54,7 @@ export const authenticateToken = async (
     }
 
     // Check if token is blacklisted (logged out)
-    if (await redis.get(`token-blacklist:${token}`)) {
+    if (await redis.get(redisKeys.tokenBlacklist(token))) {
       throw new AuthError("Token has been revoked");
     }
 

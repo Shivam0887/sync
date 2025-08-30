@@ -20,10 +20,7 @@ app.use(
 );
 
 app.get("/api/health", (req, res) => {
-  res.status(200).json({
-    message: "User service is running",
-    timestamp: new Date().toISOString(),
-  });
+  res.status(204).end();
 });
 
 app.use("/api", router);

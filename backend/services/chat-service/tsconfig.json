@@ -11,6 +11,6 @@
   },
   "extends": "../../tsconfig.json",
   "references": [{ "paths": "../../shared" }],
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/index.ts"],
   "exclude": ["node_modules", "dist"]
 }

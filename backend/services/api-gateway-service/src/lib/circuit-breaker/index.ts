@@ -16,7 +16,7 @@ export class CircuitBreaker {
 
   private async isHealthy(endpoint: string) {
     const response = await fetch(endpoint);
-    return response.status === 200;
+    return response.ok;
   }
 
   private onSuccess() {

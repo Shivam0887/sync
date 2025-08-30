@@ -38,7 +38,7 @@ const ChatLayout = () => {
 
   const isDraggingRef = useRef(false);
 
-  const user = useUser();
+  const { data: user } = useUser();
   const conversations = useConversations();
   const isMobile = useIsMobile();
 

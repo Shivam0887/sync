@@ -25,15 +25,19 @@ interface SocketState {
 }
 
 interface SocketActions {
-  onMessageSend: (chatId: string, message: Message) => Promise<void>;
-  onMessageRead: (chatId: string, senderId: string, messageId: string) => void;
-  onUserTyping: (chatId: string, userId: string, isTyping: boolean) => void;
+  onMessageSend: (
+    args: {
+      chatId: string,
+      message: Message,
+      conversationType: "direct" | "group"
+    }
+  ) => Promise<void>;
+  onMessageRead: (args: { chatId: string, senderId: string, messageId: string }) => void;
+  onUserTyping: (args: { chatId: string, userId: string, isTyping: boolean }) => void;
 }
 
 const SocketStateContext = createContext<SocketState | undefined>(undefined);
-const SocketActionsContext = createContext<SocketActions | undefined>(
-  undefined
-);
+const SocketActionsContext = createContext<SocketActions | undefined>(undefined);
 
 // Custom hook for accessing socket state
 const useSocketState = () => {
@@ -53,21 +57,9 @@ const useSocketActions = () => {
   return context;
 };
 
-// Main hook that combines both state and actions
-const useSocket = () => {
-  return {
-    ...useSocketState(),
-    ...useSocketActions(),
-  };
-};
-
 export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
-  const [socketState, setSocketState] = useState<{
-    status: SocketConnectionStatus;
-  }>({ status: "disconnected" });
-  const [accessToken, setAccessToken] = useState(
-    localStorage.getItem("accessToken")
-  );
+  const [socketState, setSocketState] = useState<{ status: SocketConnectionStatus }>({ status: "disconnected" });
+  const [accessToken, setAccessToken] = useState(localStorage.getItem("accessToken"));
 
   const socketRef = useRef<IOSocket | null>(null);
 
@@ -77,14 +69,14 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     updateMessageId,
     updateTypingStatus,
   } = useChatActions();
+  
+  const { data: user } = useUser();
   const { updateUserPresence } = useUserActions();
-
-  const user = useUser();
 
   // Memoized socket actions
   const actions = useMemo<SocketActions>(
     () => ({
-      onMessageSend: async (chatId, message) => {
+      onMessageSend: async ({ chatId, message, conversationType }) => {
         const socket = socketRef.current;
         if (!socket?.connected) {
           toastErrorHandler({
@@ -95,28 +87,34 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
 
         socket
           .timeout(3000)
-          .emit("send_message", chatId, message, (err, { newId, tempId }) => {
-            if (err) {
-              console.log("[send_message] ack error:", err.message);
-            } else {
-              updateMessageId(chatId, tempId, newId);
-              updateMessageStatus(chatId, newId, "SENT");
-            }
-          });
+          .emit("send_message",
+           { 
+            chatId,
+            message,
+            conversationType,
+            ack: (err, { newId, tempId }) => {
+              if (err) {
+                console.log("[send_message] ack error:", err.message);
+              } else {
+                updateMessageId({ chatId, tempId, newId });
+                updateMessageStatus({ chatId, messageId: newId, status: "SENT" });
+              }
+            }}
+          );
 
-        addMessage(chatId, message);
+        addMessage({ chatId, message });
       },
 
-      onMessageRead: (chatId, senderId, messageId) => {
+      onMessageRead: (args) => {
         const socket = socketRef.current;
         if (socket) {
-          socket.emit("message_status", senderId, chatId, messageId, "READ");
+          socket.emit("message_status", { ...args, status: "READ" });
         }
       },
 
-      onUserTyping: (chatId, userId, isTyping) => {
+      onUserTyping: (args) => {
         if (socketRef.current) {
-          socketRef.current.emit("user_typing", chatId, userId, isTyping);
+          socketRef.current.emit("user_typing", args);
         }
       },
     }),
@@ -166,20 +164,25 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const onMessageReceive: ServerToClientEvents["receive_message"] = (
+    const onMessageReceive: ServerToClientEvents["receive_message"] = ({
       chatId,
       message,
-      cb
-    ) => {
+      ack
+    }) => {
       try {
-        addMessage(chatId, message);
-        cb();
-        updateMessageStatus(chatId, message.id, "DELIVERED");
+        ack();
+        addMessage({ chatId, message });
+        updateMessageStatus({ chatId, messageId: message.id, status:"DELIVERED" });
       } catch (error) {
         console.error("Error processing received message:", error);
-        cb();
+        ack();
       }
     };
+
+    const onError: ServerToClientEvents["error"] = (error, ack) => {
+      ack();
+      toastErrorHandler({ error });
+    }
 
     socket.auth = { userId };
     socket.connect();
@@ -190,10 +193,12 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     socket.on("connect_error", onConnectError);
     socket.io.on("reconnect_attempt", onReconnecting);
     socket.io.on("reconnect", onReconnected);
+
     socket.on("receive_message", onMessageReceive);
     socket.on("message_status", updateMessageStatus);
     socket.on("user_typing", updateTypingStatus);
     socket.on("presence_updates", updateUserPresence);
+    socket.on("error", onError);
 
     return () => {
       socket.auth = {};
@@ -203,10 +208,12 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       socket.off("connect_error", onConnectError);
       socket.io.off("reconnect_attempt", onReconnecting);
       socket.io.off("reconnect", onReconnected);
+
       socket.off("receive_message", onMessageReceive);
       socket.off("message_status", updateMessageStatus);
       socket.off("user_typing", updateTypingStatus);
       socket.off("presence_updates", updateUserPresence);
+      socket.off("error", onError);
     };
   }, [
     user?.id,
@@ -234,4 +241,4 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-export { useSocket, useSocketState, useSocketActions };
+export { useSocketState, useSocketActions };

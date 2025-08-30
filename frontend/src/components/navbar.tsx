@@ -4,22 +4,15 @@ import { MessageCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import ToggleTheme from "./toggle-theme";
 import { useAuthActions, useAuthModal, useUser } from "@/stores/auth-store";
-import { useNavigate } from "react-router";
 
 const Navbar = () => {
-  const user = useUser();
-  const navigate = useNavigate();
+  const { data: user } = useUser();
   const { logout } = useAuthActions();
   const { setAuthType, setAuthModalOpen } = useAuthModal();
 
   const handleAuthClick = (authType: AuthType) => {
     setAuthType(authType);
     setAuthModalOpen(true);
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    navigate("/");
   };
 
   return (
@@ -39,7 +32,7 @@ const Navbar = () => {
         {user ? (
           <>
             <span>{user.username}</span>
-            <Button onClick={handleLogout}>Logout</Button>
+            <Button onClick={() => logout.mutate()}>Logout</Button>
           </>
         ) : (
           <>

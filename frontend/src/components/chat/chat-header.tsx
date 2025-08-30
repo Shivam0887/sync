@@ -48,16 +48,15 @@ const ChatHeader = ({
   const presence = useUserPresence(otherUserId);
 
   useEffect(() => {
-    const fetchUserPresence = async (userId: string) => {
+    const fetchUserPresence = async (id: string) => {
       try {
-        const response = await apiRequest(`/chat/${userId}/presence`);
+        const response = await apiRequest(`/chat/${id}/presence`);
         if (!response.ok) throw new Error("[User Presence] error");
-        const { data } = await response.json();
 
-        if (data) {
-          userPresenceSet.add(userId);
-          updateUserPresence(data.userId, data.status, data.lastSeen);
-        }
+        const { userId, status, lastSeen } = (await response.json()).data;
+
+        userPresenceSet.add(userId);
+        updateUserPresence({ userId, status, lastSeen });
       } catch (error) {
         console.error(error);
       }

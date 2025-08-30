@@ -43,13 +43,13 @@ const ChatSidebar = ({
 
   const isMobile = useIsMobile();
 
-  const user = useUser();
+  const { data: user } = useUser();
   const { status: socketConnectionStatus } = useSocketState();
 
   const {
     data: conversation,
-    isLoading: isConversationLoading,
     error,
+    isPending: isConversationLoading,
   } = useFetchConversations();
 
   if (error) {
@@ -177,16 +177,21 @@ const ChatSidebar = ({
                           <span className="font-medium text-sm truncate text-sidebar-foreground capitalize">
                             {otherUser.username}
                           </span>
-                          {conversation[id].timestamp && (
+                          {conversation[id].lastMessage?.createdAt && (
                             <span className="text-xs text-muted-foreground">
-                              {format(conversation[id].timestamp, "h:mm a")}
+                              {format(
+                                conversation[id].lastMessage.createdAt,
+                                "h:mm a"
+                              )}
                             </span>
                           )}
                         </div>
                         <div className="flex items-center justify-between">
-                          <p className="text-xs text-muted-foreground truncate">
-                            {conversation[id].lastMessage}
-                          </p>
+                          {conversation[id].lastMessage?.content && (
+                            <p className="text-xs text-muted-foreground truncate">
+                              {conversation[id].lastMessage?.content}
+                            </p>
+                          )}
                           {conversation[id].unread > 0 && (
                             <span className="ml-1 bg-primary text-primary-foreground font-medium text-xs rounded-full h-5 w-5 inline-flex items-center justify-center px-1.5">
                               {conversation[id].unread}

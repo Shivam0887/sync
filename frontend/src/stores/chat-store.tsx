@@ -12,7 +12,7 @@ import { apiRequest } from "@/services/api-request";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
 
-const chatQueryKeys = {
+export const chatQueryKeys = {
   conversations: ["conversations"] as const,
   messages: (chatId: string) => ["message", chatId] as const,
 };
@@ -22,10 +22,11 @@ export function converationOptions() {
     queryKey: chatQueryKeys.conversations,
     queryFn: async () => {
       const res = await apiRequest("/chat/conversations");
-
-      if (!res.ok) throw new Error("Failed to fetch conversations");
-
       const data = await res.json();
+
+      if (!res.ok)
+        throw new Error(data?.message ?? "Failed to fetch conversations");
+
       return (data.conversations as Conversation[]).reduce(
         (result, conversation) => {
           result[conversation.id] = conversation;
@@ -45,17 +46,16 @@ export function chatMessageOptions(chatId: string) {
     queryKey: chatQueryKeys.messages(chatId),
     queryFn: async (): Promise<Message[]> => {
       const res = await apiRequest(`/chat/${chatId}/messages`);
-
-      if (!res.ok) throw new Error("Failed to fetch messages");
-
       const data = await res.json();
+
+      if (!res.ok) throw new Error(data?.message ?? "Failed to fetch messages");
+
       return data.messages;
     },
+    enabled: !!chatId,
     staleTime: Infinity,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
-    refetchInterval: false,
-    refetchIntervalInBackground: false,
   });
 }
 
@@ -70,7 +70,7 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
     userPresence: {},
     typingStatus: {},
 
-    addMessage: (chatId, message) => {
+    addMessage: ({ chatId, message }) => {
       const messagesKey = chatMessageOptions(chatId).queryKey;
 
       queryClient.setQueryData(messagesKey, (oldMessages = []) => {
@@ -78,7 +78,7 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
       });
     },
 
-    addMembers: (chatId, members) => {
+    addMembers: ({ chatId, members }) => {
       queryClient.setQueryData(
         converationOptions().queryKey,
         (conversation = {}) => {
@@ -96,7 +96,7 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
       );
     },
 
-    removeMembers: (chatId, members) => {
+    removeMembers: ({ chatId, members }) => {
       queryClient.setQueryData(
         converationOptions().queryKey,
         (conversation = {}) => {
@@ -117,7 +117,7 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
       );
     },
 
-    updateMessageStatus: (chatId, messageId, status) => {
+    updateMessageStatus: ({ chatId, messageId, status }) => {
       const messagesKey = chatMessageOptions(chatId).queryKey;
 
       queryClient.setQueryData(messagesKey, (oldMessages = []) => {
@@ -127,7 +127,7 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
       });
     },
 
-    updateMessageId: (chatId, tempId, newId) => {
+    updateMessageId: ({ chatId, tempId, newId }) => {
       const messagesKey = chatMessageOptions(chatId).queryKey;
 
       queryClient.setQueryData(messagesKey, (oldMessages = []) => {
@@ -137,7 +137,7 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
       });
     },
 
-    updateTypingStatus: (chatId, userId, isTyping) => {
+    updateTypingStatus: ({ chatId, userId, isTyping }) => {
       set(() => ({
         typingStatus: {
           [`${chatId}:${userId}`]: isTyping,
@@ -145,7 +145,7 @@ const useChatStoreBase = create<IChatState & IChatActions>()(
       }));
     },
 
-    updateUserPresence: (userId, status, lastSeen) => {
+    updateUserPresence: ({ userId, status, lastSeen }) => {
       set((state) => ({
         userPresence: {
           ...state.userPresence,

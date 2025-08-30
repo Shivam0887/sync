@@ -1,6 +1,5 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -15,7 +14,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { signinSchema } from "@/lib/schema";
-import { toast } from "sonner";
 import { useAuthActions } from "@/stores/auth-store";
 
 type TSignin = z.infer<typeof signinSchema>;
@@ -23,8 +21,6 @@ type TSignin = z.infer<typeof signinSchema>;
 const Signin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const { signin } = useAuthActions();
-
-  const navigate = useNavigate();
 
   const form = useForm<TSignin>({
     resolver: zodResolver(signinSchema),
@@ -34,14 +30,6 @@ const Signin = () => {
     },
   });
 
-  const handleSubmit = async (values: TSignin) => {
-    const response = await signin(values.email, values.password);
-    if (response.success) {
-      toast(response.message);
-      navigate("/chat");
-    }
-  };
-
   return (
     <div className="flex items-center justify-center bg-background">
       <div className="max-w-4xl w-full flex overflow-hidden">
@@ -49,7 +37,7 @@ const Signin = () => {
           <Form {...form}>
             <form
               className="mt-8 space-y-6"
-              onSubmit={form.handleSubmit(handleSubmit)}
+              onSubmit={form.handleSubmit((values) => signin.mutate(values))}
             >
               <div className="space-y-4">
                 <FormField

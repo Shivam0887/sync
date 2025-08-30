@@ -7,36 +7,49 @@ export type SocketConnectionStatus =
   | "reconnecting";
 
 export interface ClientToServerEvents {
-  send_message: (
-    chatId: string,
-    message: Omit<Message, "status">,
-    cb: (msg: { tempId: string; newId: string }) => void
-  ) => void;
-  message_status: (
-    senderId: string,
-    chatId: string,
-    messageId: string,
-    status: "READ"
-  ) => void;
-
-  user_typing: (chatId: string, userId: string, isTying: boolean) => void;
-  join_group: (groupIds: string[], userIds: string[]) => void;
-  leave_group: (groupId: string, userId: string) => void;
+  send_message: (args: {
+    chatId: string;
+    message: Omit<Message, "status">;
+    conversationType: "direct" | "group";
+    ack: (error: Error, msg: { tempId: string; newId: string }) => void;
+  }) => void;
+  message_status: (args: {
+    senderId: string;
+    chatId: string;
+    messageId: string;
+    status: "READ";
+  }) => void;
+  user_typing: (args: {
+    chatId: string;
+    userId: string;
+    isTyping: boolean;
+  }) => void;
+  join_group: (args: { groupIds: string[]; userIds: string[] }) => void;
+  leave_group: (args: { groupId: string; userId: string }) => void;
 }
 
 export interface ServerToClientEvents {
-  receive_message: (chatId: string, message: Message, cb: () => void) => void;
-  message_status: (
-    chatId: string,
-    messageId: string,
-    status: "DELIVERED" | "READ"
-  ) => void;
-  user_typing: (chatId: string, userId: string, isTying: boolean) => void;
-  presence_updates: (
-    userId: string,
-    status: "online" | "offline" | "away",
-    lastSeen: string
-  ) => void;
+  receive_message: (args: {
+    chatId: string;
+    message: Message;
+    ack: () => void;
+  }) => void;
+  message_status: (args: {
+    chatId: string;
+    messageId: string;
+    status: "DELIVERED" | "READ";
+  }) => void;
+  user_typing: (args: {
+    chatId: string;
+    userId: string;
+    isTyping: boolean;
+  }) => void;
+  presence_updates: (args: {
+    userId: string;
+    status: "online" | "offline" | "away";
+    lastSeen: string;
+  }) => void;
+  error: (error: string, ack: () => void) => void;
 }
 
 export type IOSocket = Socket<ServerToClientEvents, ClientToServerEvents>;

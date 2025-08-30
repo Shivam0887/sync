@@ -1,30 +1,88 @@
-import type { IAuthState, IAuthAction } from "@/types/auth.types";
+import type {
+  User,
+  IAuthModalState,
+  IAuthModalAction,
+} from "@/types/auth.types";
 
-import { createSelectors, toastErrorHandler } from "@/lib/utils";
 import { apiRequest } from "@/services/api-request";
-import { create } from "zustand";
 import { format } from "date-fns";
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { create } from "zustand";
+import { toastErrorHandler } from "@/lib/utils";
 
-const useAuthStoreBase = create<IAuthState & IAuthAction>()((set, get) => ({
-  user: null,
-  authType: "signup",
-  isAuthenticated: false,
-  loading: false,
-  authModalOpen: false,
+interface Signup {
+  email: string;
+  password: string;
+  username: string;
+  confirmPassword: string;
+}
 
-  setAuthType: (type) => set({ authType: type }),
-  setAuthModalOpen: (isOpen) => set({ authModalOpen: isOpen }),
+export const authQueryKeys = {
+  user: ["user"] as const,
+};
 
-  clearAuth: () =>
-    set({
-      user: null,
-      isAuthenticated: false,
-      authModalOpen: false,
-    }),
+export const authMutationKeys = {
+  signin: ["signin"] as const,
+  signup: ["signup"] as const,
+  logout: ["logout"] as const,
+};
 
-  signin: async (email, password) => {
-    set({ loading: true });
-    try {
+export const userQueryOptions = queryOptions({
+  queryKey: authQueryKeys.user,
+  queryFn: async () => {
+    const response = await apiRequest("/user/profile");
+    const data = await response.json();
+
+    if (!response.ok)
+      throw new Error(data?.message ?? "Token validation failed");
+
+    return data.user as User;
+  },
+  enabled:
+    !!localStorage.getItem("accessToken") &&
+    !!localStorage.getItem("refreshToken"),
+  staleTime: Infinity,
+  refetchOnMount: false,
+  refetchOnReconnect: false,
+  refetchOnWindowFocus: false,
+});
+
+export const useAuthModal = create<IAuthModalState & IAuthModalAction>()(
+  (set) => ({
+    authType: "signup",
+    authModalOpen: false,
+
+    setAuthModalOpen: (open: boolean) => {
+      set({ authModalOpen: open });
+    },
+
+    setAuthType: (type) => {
+      set({ authType: type });
+    },
+  })
+);
+
+export const useUser = (enabled = false) =>
+  useQuery({
+    ...userQueryOptions,
+    enabled: enabled && userQueryOptions.enabled,
+  });
+
+export const useAuthActions = () => {
+  const queryClient = useQueryClient();
+  const { setAuthModalOpen } = useAuthModal();
+
+  const signin = useMutation({
+    mutationKey: authMutationKeys.signin,
+    mutationFn: async ({
+      email,
+      password,
+    }: Pick<Signup, "email" | "password">) => {
       const response = await apiRequest("/auth/signin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -51,21 +109,25 @@ const useAuthStoreBase = create<IAuthState & IAuthAction>()((set, get) => ({
       localStorage.setItem("accessToken", data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
 
-      set({ user: data.user, isAuthenticated: true, authModalOpen: false });
-
-      return { success: true, message: "Login successfully" };
-    } catch (error) {
+      return data.user as User;
+    },
+    onError: (error) => {
       toastErrorHandler({ error });
-      return { success: false, error: "Unable to signin" };
-    } finally {
-      set({ loading: false });
-    }
-  },
+    },
+    onSuccess: (user) => {
+      queryClient.setQueryData(authQueryKeys.user, () => user);
+      setAuthModalOpen(false);
+    },
+  });
 
-  signup: async (email, username, password, confirmPassword) => {
-    set({ loading: true });
-
-    try {
+  const signup = useMutation({
+    mutationKey: authMutationKeys.signup,
+    mutationFn: async ({
+      email,
+      password,
+      confirmPassword,
+      username,
+    }: Signup) => {
       const response = await apiRequest("/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -79,105 +141,29 @@ const useAuthStoreBase = create<IAuthState & IAuthAction>()((set, get) => ({
       localStorage.setItem("accessToken", data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
 
-      set({ user: data.user, isAuthenticated: true, authModalOpen: false });
-
-      return { success: true, message: "Account created successfully!" };
-    } catch (error) {
+      return data.user as User;
+    },
+    onError: (error) => {
       toastErrorHandler({ error });
-      return { success: false, error: "Unable to signup" };
-    } finally {
-      set({ loading: false });
-    }
-  },
+    },
+    onSuccess: (user) => {
+      queryClient.setQueryData(authQueryKeys.user, () => user);
+      setAuthModalOpen(false);
+    },
+  });
 
-  logout: async () => {
-    set({ loading: true });
-
-    try {
+  const logout = useMutation({
+    mutationKey: authMutationKeys.logout,
+    mutationFn: async () => {
       await apiRequest("/auth/logout", { method: "POST" });
-    } catch (error) {
-      toastErrorHandler({ error });
-    } finally {
-      // Clear client-side state regardless of server response
-      get().clearAuth();
+    },
+    onSettled: () => {
+      queryClient.setQueryData(["user"], () => null);
 
       localStorage.removeItem("accessToken");
       localStorage.removeItem("refreshToken");
+    },
+  });
 
-      set({ loading: false });
-    }
-  },
-
-  changePassword: async (currentPassword, newPassword) => {
-    set({ loading: true });
-
-    try {
-      const response = await apiRequest("/auth/change-password", {
-        method: "PUT",
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) throw new Error(data.error || "Password change failed");
-    } catch (error) {
-      toastErrorHandler({ error });
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  fetchUserProfile: async () => {
-    set({ loading: true });
-
-    try {
-      const response = await apiRequest("/user/profile");
-
-      if (!response.ok) throw new Error("Token validation failed");
-
-      const data = await response.json();
-      set({ user: data.user, isAuthenticated: true });
-    } catch (error) {
-      set({ user: null, isAuthenticated: false });
-      toastErrorHandler({ error });
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  initializeAuth: async () => {
-    const storedAccessToken = localStorage.getItem("accessToken");
-    const storedRefreshToken = localStorage.getItem("refreshToken");
-
-    if (storedAccessToken && storedRefreshToken) {
-      await get().fetchUserProfile();
-    } else {
-      set({ loading: false });
-    }
-  },
-}));
-
-export const useAuthStore = createSelectors(useAuthStoreBase);
-
-export const useUser = useAuthStore.use.user;
-
-export const useAuthActions = () => ({
-  signin: useAuthStore.use.signin(),
-  signup: useAuthStore.use.signup(),
-  logout: useAuthStore.use.logout(),
-  changePassword: useAuthStore.use.changePassword(),
-  fetchUserProfile: useAuthStore.use.fetchUserProfile(),
-  initializeAuth: useAuthStore.use.initializeAuth(),
-});
-
-export const useAuthStatus = () => ({
-  isAuthenticated: useAuthStore.use.isAuthenticated(),
-  loading: useAuthStore.use.loading(),
-});
-
-export const useAuthModal = () => ({
-  isOpen: useAuthStore.use.authModalOpen(),
-  authType: useAuthStore.use.authType(),
-  setAuthType: useAuthStore.use.setAuthType(),
-  setAuthModalOpen: useAuthStore.use.setAuthModalOpen(),
-});
+  return { signin, signup, logout };
+};
