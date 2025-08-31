@@ -16,11 +16,13 @@ export interface IParticipant {
 }
 
 export interface ServerToClientEvents {
-  receive_message: (args: {
-    chatId: string;
-    message: IMessage;
-    ack: (error: Error) => void;
-  }) => void;
+  receive_message: (
+    args: {
+      chatId: string;
+      message: IMessage;
+    },
+    ack: () => void
+  ) => void;
   message_status: (args: {
     chatId: string;
     messageId: string;
@@ -40,17 +42,21 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
-  send_message: (args: {
-    chatId: string;
-    message: IMessage;
-    conversationType: "direct" | "group";
-    ack: (arg: { tempId: string; newId: string }) => {};
-  }) => void;
+  send_message: (
+    args: {
+      chatId: string;
+      message: IMessage;
+      conversationType: "direct" | "group";
+    },
+    ack: (arg: { tempId: string; newId: string }) => {}
+  ) => void;
   message_status: (args: {
     senderId: string;
     chatId: string;
     messageId: string;
     status: "READ";
+    conversationType: "direct" | "group";
+    userId: string;
   }) => void;
   user_typing: (args: {
     chatId: string;

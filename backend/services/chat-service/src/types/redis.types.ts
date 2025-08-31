@@ -28,8 +28,8 @@ export const userPresenceSchema = z.object({
 
 export const patternSchemas = {
   "user_id:*": incomingMessageSchema,
-  "user_id:*:typing": userTypingSchems,
-  "group_id:*": incomingMessageSchema.omit({ userId: true }),
+  "user_typing:*": userTypingSchems,
+  "group_id:*": incomingMessageSchema,
   "ack:*": ackSchema,
   presence_updates: userPresenceSchema,
 };
@@ -45,3 +45,7 @@ export type PatternMap = {
 
 export type PatternName = keyof PatternMap;
 export type PatternMessage<T extends PatternName> = PatternMap[T];
+
+export type PatternCallback = {
+  [K in PatternName]?: (msg: any) => Promise<void> | void;
+};

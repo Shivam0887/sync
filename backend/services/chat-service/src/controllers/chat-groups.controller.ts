@@ -69,9 +69,11 @@ export const createGroup = async (
     });
 
     const SocketManager = getSocketManagerInstance();
-    await SocketManager?.handleJoinGroup({ groupIds: [chat.id], userIds });
+    SocketManager?.handleJoinGroup({ groupIds: [chat.id], userIds });
 
-    await Promise.all(
+    redis.set(redisKeys.usersPerGroup(chat.id), userIds.length);
+
+    await Promise.allSettled(
       userIds.map(async (userId) => {
         const userChatGroupsKey = redisKeys.userChatGroups(userId);
 
@@ -140,6 +142,8 @@ export const addGroupMembers = async (
     const SocketManager = getSocketManagerInstance();
     await SocketManager?.handleJoinGroup({ groupIds: [groupId], userIds });
 
+    redis.incrby(redisKeys.usersPerGroup(groupId), userIds.length);
+
     await Promise.all(
       userIds.map(async (userId) => {
         const userChatGroupsKey = redisKeys.userChatGroups(userId);
@@ -196,6 +200,8 @@ export const removeGroupMembers = async (
 
     const SocketManager = getSocketManagerInstance();
     await SocketManager?.handleLeaveGroup({ groupId, userId });
+
+    redis.decr(redisKeys.usersPerGroup(groupId));
 
     const userChatGroupsKey = redisKeys.userChatGroups(userId);
 
@@ -321,13 +327,21 @@ export const joinViaInviteLink = async (
       userIds: [userId],
     });
 
+    redis.incr(redisKeys.usersPerGroup(groupId));
+
     const userChatGroupsKey = redisKeys.userChatGroups(userId);
 
     const result = await redis.get(userChatGroupsKey);
     const cachedUserGroups: string[] = result ? JSON.parse(result) : [];
 
     cachedUserGroups.push(groupId);
-    await redis.set(userChatGroupsKey, JSON.stringify(cachedUserGroups), "XX");
+    await redis.set(
+      userChatGroupsKey,
+      JSON.stringify(cachedUserGroups),
+      "EX",
+      30 * 24 * 60 * 60,
+      "NX"
+    );
 
     res.json({ groupId });
   } catch (error) {

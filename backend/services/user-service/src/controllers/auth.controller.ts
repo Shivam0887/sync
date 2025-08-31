@@ -1,5 +1,4 @@
 import { z } from "zod";
-import * as Sentry from "@sentry/node";
 import { NextFunction, Request, Response } from "express";
 
 import { emailSchema, passwordSchema } from "@/lib/schema/zod-schema.js";
@@ -38,6 +37,11 @@ const signupSchema = z.object({
 const signinSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
+});
+
+const decodedUserSchema = z.object({
+  id: z.string({ required_error: "user id is missing" }),
+  email: z.string().email("user email is missing"),
 });
 
 const ACCESS_TOKEN_SECRET = env.ACCESS_TOKEN_SECRET;
@@ -196,16 +200,12 @@ export const signup = async (
     });
 
     // Update the cache list of direct and group chats for an authenticated user
-    fetch(`${API_BASE_URL}/chat/${users[0].id}/connections`, {
+    await fetch(`${API_BASE_URL}/api/chat/${users[0].id}/connections`, {
       method: "POST",
-    }).catch((error) => {
-      Sentry.withScope((scope) => {
-        scope.setContext("user-connections", {
-          [users[0].id]:
-            "Update the cache list of direct and group chats for an authenticated user",
-        });
-        scope.captureException(error);
-      });
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${tokens.accessToken}`,
+      },
     });
 
     res.status(201).json({ ...tokens, user: { ...users[0], email } });
@@ -257,16 +257,12 @@ export const signin = async (
 
     // Re-fetch on each signin for fresh cache
     // Update the cache list of direct and group chats for an authenticated user
-    fetch(`${API_BASE_URL}/chat/${users[0].id}/connections`, {
+    await fetch(`${API_BASE_URL}/chat/${users[0].id}/connections`, {
       method: "POST",
-    }).catch((error) => {
-      Sentry.withScope((scope) => {
-        scope.setContext("user-connections", {
-          [users[0].id]:
-            "Update the cache list of direct and group chats for an authenticated user",
-        });
-        scope.captureException(error);
-      });
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${tokens.accessToken}`,
+      },
     });
 
     res.json({
@@ -292,14 +288,6 @@ export const logout = async (
   try {
     const authHeader = req.headers.authorization;
     const token = authHeader?.split(" ")[1];
-
-    const userId = (res as any).user.id;
-
-    if (userId) {
-      // Delete the cache list of direct and group chats during logout
-      await redis.del(redisKeys.userChatGroups(userId));
-      await redis.del(redisKeys.userContacts(userId));
-    }
 
     // Add token to blacklist
     if (token) {

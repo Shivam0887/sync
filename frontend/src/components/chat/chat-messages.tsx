@@ -5,6 +5,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { format, getTime } from "date-fns";
 import ChatMessagesSkeleton from "../skeleton-loading/chat-messages-skeleton";
 import {
+  useChatActions,
   useConversations,
   useFetchChatMessages,
   useTypingStatus,
@@ -78,6 +79,7 @@ const ChatMessage = ({
         `flex mb-5 ${isSelf ? "justify-end" : "justify-start"}`,
         containerClassName
       )}
+      data-message-type={conversation.type}
       data-status={message.status}
       data-user={senderId}
     >
@@ -120,9 +122,7 @@ const ChatMessage = ({
               {isSelf && (
                 <span
                   className={`transition-transform ${
-                    message.status === "READ"
-                      ? "rotate-y-[360deg]"
-                      : "rotate-y-0"
+                    message.status === "READ" ? "rotate-y-[360deg]" : "rotate-y-0"
                   }`}
                 >
                   {StatusToIcon[message.status]}
@@ -151,6 +151,7 @@ const ChatMessages: React.FC<{
 
   const conversation = useConversations();
   const { onMessageRead } = useSocketActions();
+  const { updateMessageStatus } = useChatActions();
   const isTyping = useTypingStatus(chatId, userId);
 
   useEffect(() => {
@@ -166,7 +167,14 @@ const ChatMessages: React.FC<{
       entries.forEach((entry) => {
         if (entry.isIntersecting) {
           const [senderId, messageId] = entry.target.id.split(":");
-          onMessageRead({ chatId, senderId, messageId });
+          const conversationType = (entry.target.getAttribute("data-message-type") ?? "direct") as "direct" | "group";
+          
+          onMessageRead({ chatId, senderId, messageId, conversationType });
+          updateMessageStatus({
+            chatId,
+            messageId,
+            status: "READ",
+          });
           observer.unobserve(entry.target);
         }
       });
@@ -181,7 +189,7 @@ const ChatMessages: React.FC<{
     return () => {
       unreadMessages.forEach((elem) => observer.unobserve(elem));
     };
-  }, [userId, chatId, messages, onMessageRead]);
+  }, [userId, chatId, messages, onMessageRead, updateMessageStatus]);
 
   const playSendMessageSound = useCallback(() => {
     if (audioRef.current) {

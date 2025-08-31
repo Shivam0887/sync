@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
 
 const useNetworkChange = () => {
-  const [isOnline, setIsOnline] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   const [offlineCount, setOfflineCount] = useState(0);
 
   useEffect(() => {

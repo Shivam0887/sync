@@ -17,7 +17,7 @@ chatRouter.get("/:chatId/messages", getMessages);
 chatRouter.post("/:otherUserId/direct", createOrGetDirectChat);
 
 // Update the cache list of direct and group chats for an authenticated user
-chatRouter.post("/:userId/converations", updateUserConnections);
+chatRouter.post("/:userId/connections", updateUserConnections);
 
 chatRouter.get("/:userId/presence", getUserPresence);
 

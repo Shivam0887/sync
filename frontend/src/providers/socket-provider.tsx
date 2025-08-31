@@ -25,19 +25,28 @@ interface SocketState {
 }
 
 interface SocketActions {
-  onMessageSend: (
-    args: {
-      chatId: string,
-      message: Message,
-      conversationType: "direct" | "group"
-    }
-  ) => Promise<void>;
-  onMessageRead: (args: { chatId: string, senderId: string, messageId: string }) => void;
-  onUserTyping: (args: { chatId: string, userId: string, isTyping: boolean }) => void;
+  onMessageSend: (args: {
+    chatId: string;
+    message: Message;
+    conversationType: "direct" | "group";
+  }) => Promise<void>;
+  onMessageRead: (args: {
+    chatId: string;
+    senderId: string;
+    messageId: string;
+    conversationType: "direct" | "group";
+  }) => void;
+  onUserTyping: (args: {
+    chatId: string;
+    userId: string;
+    isTyping: boolean;
+  }) => void;
 }
 
 const SocketStateContext = createContext<SocketState | undefined>(undefined);
-const SocketActionsContext = createContext<SocketActions | undefined>(undefined);
+const SocketActionsContext = createContext<SocketActions | undefined>(
+  undefined
+);
 
 // Custom hook for accessing socket state
 const useSocketState = () => {
@@ -58,8 +67,12 @@ const useSocketActions = () => {
 };
 
 export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
-  const [socketState, setSocketState] = useState<{ status: SocketConnectionStatus }>({ status: "disconnected" });
-  const [accessToken, setAccessToken] = useState(localStorage.getItem("accessToken"));
+  const [socketState, setSocketState] = useState<{
+    status: SocketConnectionStatus;
+  }>({ status: "disconnected" });
+  const [accessToken, setAccessToken] = useState(
+    localStorage.getItem("accessToken")
+  );
 
   const socketRef = useRef<IOSocket | null>(null);
 
@@ -69,8 +82,8 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     updateMessageId,
     updateTypingStatus,
   } = useChatActions();
-  
-  const { data: user } = useUser();
+
+  const userId = useUser().data?.id;
   const { updateUserPresence } = useUserActions();
 
   // Memoized socket actions
@@ -85,22 +98,26 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
 
-        socket
-          .timeout(3000)
-          .emit("send_message",
-           { 
+        socket.timeout(3000).emit(
+          "send_message",
+          {
             chatId,
             message,
             conversationType,
-            ack: (err, { newId, tempId }) => {
-              if (err) {
-                console.log("[send_message] ack error:", err.message);
-              } else {
-                updateMessageId({ chatId, tempId, newId });
-                updateMessageStatus({ chatId, messageId: newId, status: "SENT" });
-              }
-            }}
-          );
+          },
+          (err, { newId, tempId }) => {
+            if (err) {
+              console.log("[send_message] ack error:", err.message);
+            } else {
+              updateMessageId({ chatId, tempId, newId });
+              updateMessageStatus({
+                chatId,
+                messageId: newId,
+                status: "SENT",
+              });
+            }
+          }
+        );
 
         addMessage({ chatId, message });
       },
@@ -108,7 +125,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       onMessageRead: (args) => {
         const socket = socketRef.current;
         if (socket) {
-          socket.emit("message_status", { ...args, status: "READ" });
+          socket.emit("message_status", { ...args, status: "READ", userId: userId! });
         }
       },
 
@@ -118,13 +135,12 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         }
       },
     }),
-    [addMessage, updateMessageStatus, updateMessageId]
+    [addMessage, updateMessageStatus, updateMessageId, userId]
   );
 
   // Socket connection and event handling
   useEffect(() => {
     const socket = createSocket(accessToken);
-    const userId = user?.id;
     socketRef.current = socket;
 
     if (!userId) {
@@ -164,15 +180,13 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       }
     };
 
-    const onMessageReceive: ServerToClientEvents["receive_message"] = ({
-      chatId,
-      message,
+    const onMessageReceive: ServerToClientEvents["receive_message"] = (
+      { chatId, message },
       ack
-    }) => {
+    ) => {
       try {
         ack();
         addMessage({ chatId, message });
-        updateMessageStatus({ chatId, messageId: message.id, status:"DELIVERED" });
       } catch (error) {
         console.error("Error processing received message:", error);
         ack();
@@ -182,7 +196,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     const onError: ServerToClientEvents["error"] = (error, ack) => {
       ack();
       toastErrorHandler({ error });
-    }
+    };
 
     socket.auth = { userId };
     socket.connect();
@@ -216,7 +230,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       socket.off("error", onError);
     };
   }, [
-    user?.id,
+    userId,
     accessToken,
     addMessage,
     updateMessageStatus,

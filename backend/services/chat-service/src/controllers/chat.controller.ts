@@ -10,7 +10,7 @@ import {
   userStatusTable,
 } from "@/db/schema.js";
 
-import { eq, and, inArray, sql, isNull, count } from "drizzle-orm";
+import { eq, and, inArray, sql, isNull, count, ne } from "drizzle-orm";
 
 import { Request, Response, NextFunction } from "express";
 import {
@@ -329,7 +329,10 @@ export const updateUserConnections = async (
         )
         .innerJoin(
           chatParticipantsTable,
-          eq(chatParticipantsTable.chatId, chatsTable.id)
+          and(
+            eq(chatParticipantsTable.chatId, chatsTable.id),
+            ne(chatParticipantsTable.userId, userId)
+          )
         );
 
       const userIds = (await query).map(({ userId }) => userId);

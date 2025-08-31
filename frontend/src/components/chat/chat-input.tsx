@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/popover";
 import Loader from "@/components/loader";
 
-import useDebounceValue from "@/hooks/use-debounce-value";
+import useDebounceCallback from "@/hooks/use-debounce-callback";
 
 const MAX_ROWS = 5;
 
@@ -35,14 +35,23 @@ const ChatInput = ({
 }: ChatInputProps) => {
   const [content, setContent] = useState("");
   const [textareaClientHeight, setTextareaClientHeight] = useState(0); // Initial textarea client height
+
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const cursorPosRef = useRef<number | null>(null);
+  const isUserTypingRef = useRef(false);
 
   const { onMessageSend, onUserTyping } = useSocketActions();
 
-  const [isTyping, setIsTyping] = useDebounceValue(false, 1000, {
-    leading: true,
-  });
+  const debouncedUserTyping = useDebounceCallback(
+    (chatId: string, userId: string) => {
+      isUserTypingRef.current = !isUserTypingRef.current;
+      onUserTyping({ chatId, userId, isTyping: isUserTypingRef.current });
+    },
+    1000,
+    {
+      leading: true,
+    }
+  );
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -59,12 +68,6 @@ const ChatInput = ({
       cursorPosRef.current = null; // Reset
     }
   }, [content]);
-
-  useEffect(() => {
-    if (conversationType === "direct" && receiverId) {
-      onUserTyping({ chatId, userId: receiverId, isTyping });
-    }
-  }, [conversationType, receiverId, chatId, isTyping, onUserTyping]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,7 +100,9 @@ const ChatInput = ({
     const elem = e.target;
 
     setContent(elem.value);
-    setIsTyping((prev) => !prev);
+
+    if (conversationType === "direct" && receiverId)
+      debouncedUserTyping(chatId, receiverId);
 
     const currentRows = elem.scrollHeight / textareaClientHeight;
 

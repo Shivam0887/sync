@@ -18,6 +18,7 @@ import { sql } from "drizzle-orm";
 
 import { redisKeys, redisPubSubKeys } from "@/lib/utils/index.js";
 import {
+  PatternCallback,
   PatternMessage,
   PatternName,
   patternSchemas,
@@ -34,11 +35,16 @@ class SocketManager {
   private readonly sub = redis.duplicate();
   private readonly pub = redis.duplicate();
 
+  private patternRegistry = new Set<string>();
+
   private readonly userToSockets = new Map<string, Set<string>>();
   private readonly socketToUser = new Map<string, string>();
 
-  private userPresence = new Map<string, TPresenceUpdate>();
+  private readonly readCountPerGroup = new Map<string, Set<string>>();
+
+  private readonly userPresence = new Map<string, TPresenceUpdate>();
   private presenceUpdateQueue: TPresenceUpdate[] = [];
+  private registerPatternCallback: PatternCallback = {};
 
   private initPatternMessageEvent = false;
 
@@ -71,15 +77,35 @@ class SocketManager {
     cb: (message: PatternMessage<T>) => Promise<void> | void
   ) {
     try {
+      // Subscribe to the pattern
       await this.sub.psubscribe(pattern);
 
+      // Add pattern to our registry
+      this.patternRegistry.add(pattern);
+
+      // Store the callback for this specific pattern
+      this.registerPatternCallback[pattern] = cb;
+
+      // Set up the event listener only once
       if (!this.initPatternMessageEvent) {
         this.initPatternMessageEvent = true;
 
         this.sub.on("pmessage", (matchedPattern, channel, rawMessage) => {
-          if (matchedPattern === pattern) {
-            const message = patternSchemas[pattern].parse(rawMessage);
-            cb(message as PatternMessage<T>);
+          try {
+            if (this.patternRegistry.has(matchedPattern)) {
+              const typedPattern = matchedPattern as PatternName;
+
+              const message = patternSchemas[typedPattern].parse(
+                JSON.parse(rawMessage)
+              );
+
+              this.registerPatternCallback[typedPattern]?.(message);
+            }
+          } catch (parseError) {
+            console.log(
+              `[PMESSAGE] Parse error for pattern ${matchedPattern}:`,
+              parseError
+            );
           }
         });
       }
@@ -89,11 +115,11 @@ class SocketManager {
   }
 
   private async subscribeRedisPatterns() {
-    await this.psubscribe("user_id:*", this.onIncomingUserMessage);
-    await this.psubscribe("user_id:*:typing", this.onUserTyping);
-    await this.psubscribe("group_id:*", this.onIncomingGroupMessage);
-    await this.psubscribe("ack:*", this.onIncomingAck);
-    await this.psubscribe("presence_updates", this.broadcastPresenceUpdate);
+    await this.psubscribe("user_id:*", this.onIncomingUserMessage.bind(this));
+    await this.psubscribe("user_typing:*", this.onUserTyping.bind(this));
+    await this.psubscribe("group_id:*", this.onIncomingGroupMessage.bind(this));
+    await this.psubscribe("ack:*", this.onIncomingAck.bind(this));
+    await this.psubscribe("presence_updates", this.broadcastPresenceUpdate.bind(this));
   }
 
   private publishRedisPatterns<T extends PatternName>(
@@ -331,10 +357,13 @@ class SocketManager {
       for (const socketId of sockets.keys()) {
         const socket = this.ioInstance.sockets.sockets.get(socketId);
         if (socket) {
-          socket.timeout(3000).emit("receive_message", {
-            chatId,
-            message,
-            ack: async (err) => {
+          socket.timeout(3000).emit(
+            "receive_message",
+            {
+              chatId,
+              message,
+            },
+            async (err) => {
               if (err) {
                 console.log("[receive_message] emit error:", err.message);
               } else {
@@ -346,8 +375,8 @@ class SocketManager {
                   messageDelivered();
                 }
               }
-            },
-          });
+            }
+          );
         } else {
           this.cleanupSocket(socketId);
         }
@@ -360,19 +389,40 @@ class SocketManager {
   private onIncomingGroupMessage({
     chatId,
     message,
-  }: Omit<TIncomingMessage, "userId">) {
-    const senderSockets = this.userToSockets.get(message.senderId);
+    userId,
+  }: TIncomingMessage) {
+    const senderSockets = this.userToSockets.get(userId);
 
     this.updatePresence({
-      userId: message.senderId,
+      userId: userId,
       status: "online",
       lastSeen: new Date().toISOString(),
     });
 
+    let ackCount = 0;
+
+    const messageDelivered = () => {
+      this.publishRedisPatterns<"ack:*">(
+        redisPubSubKeys.ackChannel(message.senderId),
+        {
+          chatId,
+          userId: message.senderId,
+          messageId: message.id,
+          status: "DELIVERED",
+        }
+      );
+    };
+
     this.ioInstance
       .to(chatId)
       .except(senderSockets ? Array.from(senderSockets) : [])
-      .emit("receive_message", { chatId, message, ack: () => {} });
+      .emit("receive_message", { chatId, message }, () => {
+        ackCount++;
+
+        if(ackCount === 1) {
+          messageDelivered();
+        }
+      });
   }
 
   private onIncomingAck({ chatId, messageId, status, userId }: TAck) {
@@ -403,12 +453,11 @@ class SocketManager {
     }
   }
 
-  private handleSendMessage({
-    ack,
-    chatId,
-    conversationType,
-    message,
-  }: Parameters<ClientToServerEvents["send_message"]>[0]) {
+  private handleSendMessage(
+    args : Parameters<ClientToServerEvents["send_message"]>[0],
+    ack: Parameters<ClientToServerEvents["send_message"]>[1]
+  ) {
+    const { chatId, conversationType, message } = args;
     try {
       const newId = uuidv7();
 
@@ -418,32 +467,44 @@ class SocketManager {
 
       const payload = {
         chatId,
-        message: { ...message, status: "SENT" },
+        message: { ...message, status: "DELIVERED" },
       };
 
       if (conversationType === "direct" && message.receiverId) {
         const userId = message.receiverId;
-        this.publishRedisPatterns<"user_id:*">(
-          redisPubSubKeys.userIdChannel(userId),
-          { ...payload, userId }
-        );
+        this.publishRedisPatterns<"user_id:*">(redisPubSubKeys.userIdChannel(userId), { ...payload, userId });
       } else {
-        this.publishRedisPatterns<"group_id:*">(
-          redisPubSubKeys.userIdChannel(chatId),
-          payload
-        );
+        this.publishRedisPatterns<"group_id:*">(redisPubSubKeys.groupIdChannel(chatId), { ...payload, userId: message.senderId });
       }
     } catch (err) {
       console.error("Error sending message:", err);
     }
   }
 
-  private handleMessageStatusChange({
-    senderId,
-    chatId,
-    messageId,
-    status,
-  }: Parameters<ClientToServerEvents["message_status"]>[0]) {
+  private async handleMessageStatusChange(args: Parameters<ClientToServerEvents["message_status"]>[0]) {
+    const { chatId, conversationType, messageId, senderId, status, userId } = args;
+
+    if(conversationType === "group") {
+      if(!this.readCountPerGroup.has(messageId)) {
+        this.readCountPerGroup.set(messageId, new Set());
+      }
+
+      this.readCountPerGroup.get(messageId)?.add(userId);
+      const count = this.readCountPerGroup.get(messageId)!.size;
+
+      try {  
+        const totalMembers = await redis.get(redisKeys.usersPerGroup(chatId)) ?? "2";
+  
+        if(!isNaN(Number(totalMembers)) && count + 1 < Number(totalMembers)) {
+          return;
+        }
+  
+        this.readCountPerGroup.delete(messageId);
+      } catch (error) {
+        console.log(`Failed to get count of the members for group ${chatId}`, error);
+      }
+    }
+
     this.publishRedisPatterns<"ack:*">(redisPubSubKeys.ackChannel(senderId), {
       chatId,
       userId: senderId,
@@ -452,25 +513,15 @@ class SocketManager {
     });
   }
 
-  private handleUserTyping = ({
-    chatId,
-    userId,
-    isTyping,
-  }: Parameters<ClientToServerEvents["user_typing"]>[0]) => {
-    this.publishRedisPatterns<"user_id:*:typing">(
-      redisPubSubKeys.userTypingChannel(userId),
-      {
-        chatId,
-        userId,
-        isTyping,
-      }
+  private handleUserTyping = (args: Parameters<ClientToServerEvents["user_typing"]>[0]) => {
+    this.publishRedisPatterns<"user_typing:*">(
+      redisPubSubKeys.userTypingChannel(args.userId),
+      args
     );
   };
 
-  async handleJoinGroup({
-    groupIds,
-    userIds,
-  }: Parameters<ClientToServerEvents["join_group"]>[0]) {
+  async handleJoinGroup(args: Parameters<ClientToServerEvents["join_group"]>[0]) {
+    const { groupIds, userIds } = args;
     try {
       for (const userId of userIds) {
         const sockets = this.userToSockets.get(userId);
@@ -485,10 +536,8 @@ class SocketManager {
     }
   }
 
-  async handleLeaveGroup({
-    groupId,
-    userId,
-  }: Parameters<ClientToServerEvents["leave_group"]>[0]) {
+  async handleLeaveGroup(args: Parameters<ClientToServerEvents["leave_group"]>[0]) {
+    const { groupId, userId } = args;
     try {
       const sockets = this.userToSockets.get(userId);
       if (!sockets) return;
