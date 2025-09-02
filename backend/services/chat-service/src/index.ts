@@ -24,7 +24,7 @@ const decodedUserSchema = z.object({
 //   { path: /\/chat\/.*\/connections/, allowedMethods: ["POST"] },
 // ];
 
-const socketManagerInstance = initializeSocketManager(httpServer);
+initializeSocketManager(httpServer);
 
 app.use(
   cors({
@@ -63,6 +63,3 @@ app.use(errorHandler);
 httpServer.listen(env.PORT, () => {
   console.log(`Chat service listening at PORT ${env.PORT}`);
 });
-
-process.on("SIGINT", socketManagerInstance.cleanup);
-process.on("SIGTERM", socketManagerInstance.cleanup);

@@ -9,11 +9,7 @@ import { services } from "@/lib/constants";
 
 import type { NextFunction, Request, Response, RequestHandler } from "express";
 import type { ServiceName, TCircuitBreaker } from "@/types";
-import {
-  AuthError,
-  ServiceUnavailableError,
-  ValidationError,
-} from "@shared/dist/error-handler";
+import { AuthError, ValidationError } from "@shared/dist/error-handler";
 import redis from "@/config/redis-db";
 import { redisKeys } from "@/lib/utils";
 
@@ -83,12 +79,7 @@ export const serviceAvailability = (
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const isActive = await circuitBreaker.execute(service.healthCheck);
-      if (!isActive) {
-        throw new ServiceUnavailableError(
-          `${serviceName} service is temporarily unavailable`
-        );
-      }
+      await circuitBreaker.execute();
 
       next();
     } catch (error) {

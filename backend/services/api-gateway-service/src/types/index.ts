@@ -1,4 +1,4 @@
-import { CircuitBreaker } from "@/lib/circuit-breaker";
+import { CircuitBreaker } from "@shared/dist/circuit-breaker";
 
 export type ServiceName = "user" | "chat";
 

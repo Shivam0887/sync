@@ -1,7 +1,9 @@
-import type {
-  ClientToServerEvents,
-  IOServer,
-  IOSocket,
+import {
+  TUserPresence,
+  TUserTyping,
+  type ClientToServerEvents,
+  type IOServer,
+  type IOSocket,
 } from "@/types/socket.types.js";
 
 import { Server } from "socket.io";
@@ -9,112 +11,74 @@ import { Server as HttpServer } from "http";
 
 import { env } from "@/config/env.js";
 import redis from "@/config/redis-db.js";
-
 import { v7 as uuidv7 } from "uuid";
-
-import { userStatusTable } from "@/db/schema.js";
-import { db } from "@/db/index.js";
-import { sql } from "drizzle-orm";
 
 import { redisKeys, redisPubSubKeys } from "@/lib/utils/index.js";
 import {
   PatternCallback,
   PatternMessage,
   PatternName,
-  patternSchemas,
-  TAck,
   TIncomingMessage,
-  TUserPresence,
-  TUserTyping,
+  TAckMessage,
 } from "@/types/redis.types.js";
 
-type TPresenceUpdate = Omit<TUserPresence, "lastSeen"> & { lastSeen: Date };
+import { ConnectionManager } from "./connection-manager.js";
+import { PresenceManager } from "./presence-manager.js";
+import { MessageRouter } from "./message-router.js";
+import {
+  validateJoinGroup,
+  validateLeaveGroup,
+  validateMessageStatus,
+  validateSendMessage,
+  validateUserTyping,
+} from "./input-validation.js";
+
+export type PublishPattern = <T extends PatternName>(patternType: T, channel: string, message: PatternMessage<T>) => Promise<void>;
 
 class SocketManager {
   private ioInstance: IOServer;
-  private readonly sub = redis.duplicate();
-  private readonly pub = redis.duplicate();
+  private connectionManager: ConnectionManager;
+  private presenceManager: PresenceManager;
+  private messageRouter: MessageRouter;
 
+  private redisSubscriber: typeof redis;
+  private redisPublisher: typeof redis;
   private patternRegistry = new Set<string>();
-
-  private readonly userToSockets = new Map<string, Set<string>>();
-  private readonly socketToUser = new Map<string, string>();
-
-  private readonly readCountPerGroup = new Map<string, Set<string>>();
-
-  private readonly userPresence = new Map<string, TPresenceUpdate>();
-  private presenceUpdateQueue: TPresenceUpdate[] = [];
   private registerPatternCallback: PatternCallback = {};
-
   private initPatternMessageEvent = false;
 
-  // Config
-  private readonly BATCH_PROCESS_INTERVAL = 10 * 1000; // 10 seconds
-  private readonly PRESENCE_UPDATE_INTERVAL = 60 * 1000; // 60 seconds
-
-  private readonly OFFLINE_THRESHOLD = 60 * 1000; // 60 seconds
-  private readonly AWAY_THRESHOLD = 30 * 1000; // 30 seconds
-
-  private batchTimeout: NodeJS.Timeout | undefined = undefined;
-  private presenceUpdateTimeout: NodeJS.Timeout | undefined = undefined;
-
   constructor(httpServer: HttpServer) {
+    this.redisSubscriber = redis.duplicate();
+    this.redisPublisher = redis.duplicate();
+
     this.ioInstance = new Server(httpServer, {
       cors: { origin: [env.CORS_ORIGIN] },
       path: "/api/socket",
       addTrailingSlash: false,
     });
 
+    this.connectionManager = new ConnectionManager();
+
+    this.presenceManager = new PresenceManager(
+      this.connectionManager,
+      this.publishRedisPattern,
+      redis
+    );
+
+    this.messageRouter = new MessageRouter(
+      this.connectionManager,
+      this.ioInstance,
+      this.publishRedisPattern,
+    );
+
     this.subscribeRedisPatterns();
-    this.setupIoConnection();
+    this.setupSocketHandlers();
+    this.presenceManager.startMonitoring();
 
-    this.startPeriodicPresenceUpdate();
-    this.startBatchProcessing();
+    console.info('Socket Manager initialized successfully');
   }
 
-  private async psubscribe<T extends PatternName>(
-    pattern: T,
-    cb: (message: PatternMessage<T>) => Promise<void> | void
-  ) {
-    try {
-      // Subscribe to the pattern
-      await this.sub.psubscribe(pattern);
-
-      // Add pattern to our registry
-      this.patternRegistry.add(pattern);
-
-      // Store the callback for this specific pattern
-      this.registerPatternCallback[pattern] = cb;
-
-      // Set up the event listener only once
-      if (!this.initPatternMessageEvent) {
-        this.initPatternMessageEvent = true;
-
-        this.sub.on("pmessage", (matchedPattern, channel, rawMessage) => {
-          try {
-            if (this.patternRegistry.has(matchedPattern)) {
-              const typedPattern = matchedPattern as PatternName;
-
-              const message = patternSchemas[typedPattern].parse(
-                JSON.parse(rawMessage)
-              );
-
-              this.registerPatternCallback[typedPattern]?.(message);
-            }
-          } catch (parseError) {
-            console.log(
-              `[PMESSAGE] Parse error for pattern ${matchedPattern}:`,
-              parseError
-            );
-          }
-        });
-      }
-    } catch (error) {
-      console.log(`[PSUBSCRIBE] error:`, error);
-    }
-  }
-
-  private async subscribeRedisPatterns() {
+  private async subscribeRedisPatterns(): Promise<void> {
     await this.psubscribe("user_id:*", this.onIncomingUserMessage.bind(this));
     await this.psubscribe("user_typing:*", this.onUserTyping.bind(this));
     await this.psubscribe("group_id:*", this.onIncomingGroupMessage.bind(this));
@@ -122,186 +86,322 @@ class SocketManager {
     await this.psubscribe("presence_updates", this.broadcastPresenceUpdate.bind(this));
   }
 
-  private publishRedisPatterns<T extends PatternName>(
+  private async psubscribe<T extends PatternName>(
+    pattern: T,
+    cb: (message: PatternMessage<T>) => Promise<void> | void
+  ): Promise<void> {
+    try {
+      await this.redisSubscriber.psubscribe(pattern);
+      this.patternRegistry.add(pattern);
+      this.registerPatternCallback[pattern] = cb;
+
+      if (!this.initPatternMessageEvent) {
+        this.initPatternMessageEvent = true;
+
+        this.redisSubscriber.on("pmessage", (matchedPattern, channel, rawMessage) => {
+          try {
+            if (this.patternRegistry.has(matchedPattern)) {
+              const typedPattern = matchedPattern as PatternName;
+              this.registerPatternCallback[typedPattern]?.(JSON.parse(rawMessage));
+            }
+          } catch (parseError) {
+            console.error(`[PMESSAGE] Parse error for pattern ${matchedPattern}:`, parseError);
+          }
+        });
+      }
+    } catch (error) {
+      console.error(`[PSUBSCRIBE] error for pattern ${pattern}:`, error);
+    }
+  }
+
+  private async publishRedisPattern<T extends PatternName>(
+    patternType: T,
     channel: string,
     message: PatternMessage<T>
   ) {
-    this.pub.publish(channel, JSON.stringify(message)).catch((error) => {
-      console.log("[publishRedisPatterns] error:", error);
-    });
+    try {
+      await this.redisPublisher.publish(channel, JSON.stringify(message));
+    } catch (error) {
+      console.error(`[publishRedisPattern] error for pattern ${patternType}:`, error);
+      throw error;
+    }
   }
 
-  private setupIoConnection() {
+  private setupSocketHandlers(): void {
     this.ioInstance.on("connection", async (socket: IOSocket) => {
-      const userId = socket.handshake.auth.userId;
-      if (!userId) {
-        socket.timeout(3000).emit("error", "Missing userId", () => {
-          socket.disconnect();
+      try {
+        const userId = socket.handshake.auth.userId;
+  
+        if (!userId || typeof userId !== 'string') {
+          socket.timeout(3000).emit("error", "Invalid userId", () => {
+            socket.disconnect();
+          });
+          return null;
+        }
+
+        this.connectionManager.mapUserSocket(socket.id, userId);
+        
+        await this.presenceManager.updatePresence({
+          userId,
+          status: "online",
+          lastSeen: new Date().toISOString(),
         });
 
-        console.log("Connection error:", "Missing userId");
+        this.setupSocketEventHandlers(socket, userId);
+        await this.setupGroupSubscriptions(userId);
+
+      } catch (error) {
+        console.error('Error setting up socket connection:', error);
+        socket.disconnect();
       }
-
-      this.mapUserSocket(socket.id, userId); // Map userId -> socketId and vice-versa
-      this.setupSocketEventHandlers(socket); // Set up event handlers for the socket
-
-      // Update user presence to online upon socket connection
-      this.updatePresence({
-        userId,
-        status: "online",
-        lastSeen: new Date().toISOString(),
-      });
-
-      this.setupGroupSubscriptions(userId);
     });
   }
 
-  private mapUserSocket(socketId: string, userId: string) {
-    this.socketToUser.set(socketId, userId);
-
-    if (!this.userToSockets.has(userId)) {
-      this.userToSockets.set(userId, new Set());
-    }
-    this.userToSockets.get(userId)!.add(socketId);
-  }
-
-  private setupSocketEventHandlers(socket: IOSocket) {
+  private setupSocketEventHandlers(socket: IOSocket, userId: string): void {
     socket
-      .on("send_message", this.handleSendMessage.bind(this))
-      .on("message_status", this.handleMessageStatusChange.bind(this))
-      .on("user_typing", this.handleUserTyping.bind(this))
+      .on("send_message", this.handleSendMessage.bind(this, socket))
+      .on("message_status", this.handleMessageStatusChange.bind(this, socket))
+      .on("user_typing", this.handleUserTyping.bind(this, socket))
       .on("disconnect", this.handleDisconnect.bind(this, socket))
       .on("join_group", this.handleJoinGroup.bind(this))
-      .on("leave_group", this.handleLeaveGroup.bind(this));
+      .on("leave_group", this.handleLeaveGroup.bind(this))
+      .on("error", (error) => console.error(`Socket error for user ${userId}:`, error));
   }
 
-  private updatePresence(presence: TUserPresence) {
-    const userId = presence.userId;
-
-    // Queue for batch database update
-    this.queuePresenceUpdate(presence);
-
-    this.publishRedisPatterns<"presence_updates">(
-      redisPubSubKeys.presenceUpdates(),
-      presence
-    );
-
-    redis
-      .setex(
-        redisKeys.userPresence(userId),
-        7 * 24 * 60 * 60, // 7 days TTL
-        JSON.stringify({
-          status: presence.status,
-          lastSeen: presence.lastSeen,
-        })
-      )
-      .catch((error) => {
-        console.log("Redis set user presence error", error);
-      });
-  }
-
-  private async setupGroupSubscriptions(userId: string) {
+  private async setupGroupSubscriptions(userId: string): Promise<void> {
     try {
       const cachedResult = await redis.get(redisKeys.userChatGroups(userId));
       if (!cachedResult) {
-        throw new Error("Failed to find user groups");
+        console.warn(`No cached groups found for user ${userId}`);
+        return;
       }
 
       const groupIds = JSON.parse(cachedResult) as string[];
-
-      this.handleJoinGroup({ groupIds, userIds: [userId] });
+      await this.handleJoinGroup({ groupIds, userIds: [userId] });
     } catch (error) {
-      console.error("[setupGroupSubscriptions] error:", error);
+      console.error(`[setupGroupSubscriptions] error for user ${userId}:`, error);
     }
   }
 
-  private queuePresenceUpdate(presence: TUserPresence) {
-    const updatedPresence = {
-      ...presence,
-      lastSeen: new Date(presence.lastSeen),
-    };
+  // Enhanced event handlers with validation and error handling
+  private async handleSendMessage(
+    socket: IOSocket,
+    data: unknown,
+    ack: Parameters<ClientToServerEvents["send_message"]>[1]
+  ) {
+    const validation = validateSendMessage(data);
+    if (!validation.success) {
+      console.warn(`Send message validation failed:`, validation.error);
+      socket.emit("error", validation.error);
+      return;
+    }
 
-    this.userPresence.set(updatedPresence.userId, updatedPresence);
-    this.presenceUpdateQueue.push();
-  }
-
-  private startBatchProcessing() {
-    this.batchTimeout = setInterval(() => {
-      this.processBatchUpdates();
-    }, this.BATCH_PROCESS_INTERVAL);
-  }
-
-  private startPeriodicPresenceUpdate() {
-    this.presenceUpdateTimeout = setInterval(() => {
-      this.watchPresenceStatus();
-    }, this.PRESENCE_UPDATE_INTERVAL);
-  }
-
-  private async processBatchUpdates() {
-    if (this.presenceUpdateQueue.length === 0) return;
-
-    const updates = this.presenceUpdateQueue;
-    this.presenceUpdateQueue = [];
+    const { chatId, conversationType, message } = validation.data;
 
     try {
-      // Batch update database
-      await db
-        .insert(userStatusTable)
-        .values(updates)
-        .onConflictDoUpdate({
-          target: userStatusTable.userId,
-          set: {
-            status: sql`excluded.status`,
-            lastSeen: sql`excluded.last_seen`,
-          },
-        });
+      const newId = uuidv7();
+      ack({ tempId: message.id, newId });
+
+      const enhancedMessage = {
+        ...message,
+        id: newId,
+        status: "SENT" as const,
+        timestamp: new Date().toISOString()
+      };
+
+      const payload: TIncomingMessage = {
+        chatId,
+        message: enhancedMessage,
+        userId: conversationType === "direct" ? message.receiverId! : message.senderId
+      };
+
+      if (conversationType === "direct" && message.receiverId) {
+        await this.publishRedisPattern("user_id:*", redisPubSubKeys.userIdChannel(message.receiverId), payload);
+      } else if (conversationType === "group") {
+        await this.publishRedisPattern("group_id:*", redisPubSubKeys.groupIdChannel(chatId), payload);
+      }
+
     } catch (error) {
-      console.error("Failed to batch update presence:", error);
-      // Re-queue failed updates
-      this.presenceUpdateQueue.push(...updates);
+      console.error("Error sending message:", error);
+      socket.emit("error", 'Failed to send message');
     }
   }
 
-  private watchPresenceStatus() {
-    const now = Date.now();
+  private async handleMessageStatusChange(socket: IOSocket, data: unknown) {
+    const validation = validateMessageStatus(data);
+    if (!validation.success) {
+      console.warn(`Message status validation failed:`, validation.error);
+      socket.emit("error", validation.error);
+      return;
+    }
 
-    for (const [userId, presence] of this.userPresence.entries()) {
-      const timeSinceLastSeen = now - new Date(presence.lastSeen).getTime();
-      const socketCount = this.userToSockets.get(userId)?.size ?? 0;
+    const { chatId, conversationType, messageId, senderId, status, userId } = validation.data;
+    
+    try {
+      if (conversationType === "group") {
+        
+        // Handle group message read tracking
+        if (!this.messageRouter['readCountPerGroup'].has(messageId)) {
+          this.messageRouter['readCountPerGroup'].set(messageId, new Set());
+        }
 
-      const isOffline =
-        presence.status !== "offline" &&
-        timeSinceLastSeen > this.OFFLINE_THRESHOLD &&
-        socketCount === 0;
+        this.messageRouter['readCountPerGroup'].get(messageId)?.add(userId);
+        const readCount = this.messageRouter['readCountPerGroup'].get(messageId)!.size;
 
-      const isAway =
-        presence.status === "online" &&
-        timeSinceLastSeen > this.AWAY_THRESHOLD &&
-        socketCount > 0;
+        // Check if all group members have read the message
+        const totalMembers = await redis.get(redisKeys.usersPerGroup(chatId));
+        const memberCount = totalMembers ? parseInt(totalMembers, 10) : 2;
 
-      // Mark as away if online but inactive
-      const newStatus = isAway ? "away" : isOffline ? "offline" : "online";
+        if (!isNaN(memberCount) && readCount + 1 < memberCount) {
+          return; // Wait for more members to read
+        }
 
-      if (newStatus === "offline") this.userPresence.delete(userId);
-
-      if (newStatus !== "online") {
-        this.updatePresence({
-          userId,
-          lastSeen: presence.lastSeen.toISOString(),
-          status: newStatus,
-        });
+        // All members have read, clean up and send final ack
+        this.messageRouter['readCountPerGroup'].delete(messageId);
       }
+
+      await this.publishRedisPattern("ack:*", redisPubSubKeys.ackChannel(senderId), {
+        chatId,
+        userId: senderId,
+        messageId,
+        status,
+      });
+
+    } catch (error) {
+      console.error(`Error handling message status change:`, error);
+    }
+  }
+
+  private async handleUserTyping(socket: IOSocket, data: unknown) {
+    const validation = validateUserTyping(data);
+    if (!validation.success) {
+      console.warn(`User typing validation failed:`, validation.error);
+      socket.emit("error", validation.error);
+      return;
+    }
+
+    try {
+      await this.publishRedisPattern("user_typing:*", redisPubSubKeys.userTypingChannel(validation.data.userId), validation.data);
+    } catch (error) {
+      console.error('Error handling user typing:', error);
+    }
+  }
+
+  async handleJoinGroup(data: unknown) {
+    try {
+      const validation = validateJoinGroup(data);
+      if (!validation.success) {
+        console.warn(`Join group validation failed:`, validation.error);
+        throw new Error(validation.error);
+      }
+
+      const { groupIds, userIds } = validation.data;
+
+      for (const userId of userIds) {
+        const sockets = this.connectionManager.getUserSockets(userId);
+        if (!sockets) continue;
+
+        for (const socketId of sockets) {
+          this.ioInstance.in(socketId).socketsJoin(groupIds);
+        }
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async handleLeaveGroup(data: unknown) {
+    try {
+      const validation = validateLeaveGroup(data);
+      if (!validation.success) {
+        console.warn(`Leave group validation failed:`, validation.error);
+        throw new Error(validation.error);
+      }
+
+      const { groupId, userId } = validation.data;
+
+      const sockets = this.connectionManager.getUserSockets(userId);
+      if (!sockets) return;
+
+      for (const socketId of sockets) {
+        this.ioInstance.in(socketId).socketsLeave(groupId);
+      }
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  private async handleDisconnect(socket: IOSocket) {
+    const userId = this.connectionManager.getSocketUser(socket.id);
+    if (!userId) return;
+
+    try {
+      await this.presenceManager.updatePresence({
+        userId,
+        status: "offline",
+        lastSeen: new Date().toISOString(),
+      });
+
+      this.connectionManager.cleanupSocket(socket.id);
+    } catch (error) {
+      console.error('Error handling disconnect:', error);
+    }
+  }
+
+  // Redis pattern message handlers
+  private async onIncomingUserMessage(message: TIncomingMessage) {
+    try {
+      await this.messageRouter.routeDirectMessage(message);
+      
+      // Update sender presence
+      await this.presenceManager.updatePresence({
+        userId: message.message.senderId,
+        status: "online",
+        lastSeen: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Error handling incoming user message:', error);
+    }
+  }
+
+  private async onIncomingGroupMessage(message: TIncomingMessage) {
+    try {
+      await this.messageRouter.routeGroupMessage(message);
+      
+      // Update sender presence
+      await this.presenceManager.updatePresence({
+        userId: message.userId,
+        status: "online",
+        lastSeen: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Error handling incoming group message:', error);
+    }
+  }
+
+  private async onIncomingAck(ack: TAckMessage) {
+    try {
+      await this.messageRouter.handleAcknowledgment(ack);
+    } catch (error) {
+      console.error('Error handling incoming ack:', error);
+    }
+  }
+
+  private async onUserTyping(typing: TUserTyping) {
+    try {
+      await this.messageRouter.handleUserTyping(typing);
+    } catch (error) {
+      console.error('Error handling user typing:', error);
     }
   }
 
   private async broadcastPresenceUpdate(presence: TUserPresence) {
     try {
       // Get user's contacts/groups that should receive presence updates
-      const cachedResult = await redis.get(
-        redisKeys.userContacts(presence.userId)
-      );
+      const cachedResult = await redis.get(redisKeys.userContacts(presence.userId));
       if (!cachedResult) {
-        throw new Error("Unable to find user friend list");
+        console.warn(`Unable to find contacts for user ${presence.userId}`);
+        return;
       }
 
       const subscribers = JSON.parse(cachedResult) as string[];
@@ -310,296 +410,94 @@ class SocketManager {
       for (const userId of subscribers) {
         if (presence.userId === userId) continue;
 
-        const sockets = this.userToSockets.get(userId);
-        if (!sockets) continue;
-
-        sockets.forEach((socketId) => {
-          const socket = this.ioInstance.sockets.sockets.get(socketId);
-
-          if (socket) {
-            socket.emit("presence_updates", presence);
-          } else {
-            this.cleanupSocket(socketId);
-          }
-        });
-      }
-    } catch (error) {
-      console.log("[broadcastPresenceUpdate] error", error);
-    }
-  }
-
-  private onIncomingUserMessage({ chatId, message, userId }: TIncomingMessage) {
-    const sockets = this.userToSockets.get(userId);
-    if (!sockets) return; // User is not connected -> Offline
-
-    this.updatePresence({
-      userId: message.senderId,
-      status: "online",
-      lastSeen: new Date().toISOString(),
-    });
-
-    let ackCount = 0;
-
-    const messageDelivered = () => {
-      this.publishRedisPatterns<"ack:*">(
-        redisPubSubKeys.ackChannel(message.senderId),
-        {
-          chatId,
-          userId: message.senderId,
-          messageId: message.id,
-          status: "DELIVERED",
-        }
-      );
-    };
-
-    try {
-      // Emit to every socket for that user on this server
-      for (const socketId of sockets.keys()) {
-        const socket = this.ioInstance.sockets.sockets.get(socketId);
-        if (socket) {
-          socket.timeout(3000).emit(
-            "receive_message",
-            {
-              chatId,
-              message,
-            },
-            async (err) => {
-              if (err) {
-                console.log("[receive_message] emit error:", err.message);
-              } else {
-                ackCount += 1;
-
-                // If we successfully emitted to at least one socket, we can send a delivery acknowledgment
-                // back to the sender of the message
-                if (ackCount === 1) {
-                  messageDelivered();
-                }
-              }
-            }
-          );
-        } else {
-          this.cleanupSocket(socketId);
-        }
-      }
-    } catch (err) {
-      console.error("Error handling user message:", err);
-    }
-  }
-
-  private onIncomingGroupMessage({
-    chatId,
-    message,
-    userId,
-  }: TIncomingMessage) {
-    const senderSockets = this.userToSockets.get(userId);
-
-    this.updatePresence({
-      userId: userId,
-      status: "online",
-      lastSeen: new Date().toISOString(),
-    });
-
-    let ackCount = 0;
-
-    const messageDelivered = () => {
-      this.publishRedisPatterns<"ack:*">(
-        redisPubSubKeys.ackChannel(message.senderId),
-        {
-          chatId,
-          userId: message.senderId,
-          messageId: message.id,
-          status: "DELIVERED",
-        }
-      );
-    };
-
-    this.ioInstance
-      .to(chatId)
-      .except(senderSockets ? Array.from(senderSockets) : [])
-      .emit("receive_message", { chatId, message }, () => {
-        ackCount++;
-
-        if(ackCount === 1) {
-          messageDelivered();
-        }
-      });
-  }
-
-  private onIncomingAck({ chatId, messageId, status, userId }: TAck) {
-    const sockets = this.userToSockets.get(userId);
-    if (!sockets) return;
-
-    for (const socketId of sockets) {
-      const socket = this.ioInstance.sockets.sockets.get(socketId);
-      if (socket) {
-        socket.emit("message_status", { chatId, messageId, status });
-      } else {
-        this.cleanupSocket(socketId);
-      }
-    }
-  }
-
-  private onUserTyping({ chatId, isTyping, userId }: TUserTyping) {
-    const sockets = this.userToSockets.get(userId);
-    if (!sockets) return;
-
-    for (const socketId of sockets) {
-      const socket = this.ioInstance.sockets.sockets.get(socketId);
-      if (socket) {
-        socket.emit("user_typing", { chatId, userId, isTyping });
-      } else {
-        this.cleanupSocket(socketId);
-      }
-    }
-  }
-
-  private handleSendMessage(
-    args : Parameters<ClientToServerEvents["send_message"]>[0],
-    ack: Parameters<ClientToServerEvents["send_message"]>[1]
-  ) {
-    const { chatId, conversationType, message } = args;
-    try {
-      const newId = uuidv7();
-
-      ack({ tempId: message.id, newId });
-
-      message.id = newId;
-
-      const payload = {
-        chatId,
-        message: { ...message, status: "DELIVERED" },
-      };
-
-      if (conversationType === "direct" && message.receiverId) {
-        const userId = message.receiverId;
-        this.publishRedisPatterns<"user_id:*">(redisPubSubKeys.userIdChannel(userId), { ...payload, userId });
-      } else {
-        this.publishRedisPatterns<"group_id:*">(redisPubSubKeys.groupIdChannel(chatId), { ...payload, userId: message.senderId });
-      }
-    } catch (err) {
-      console.error("Error sending message:", err);
-    }
-  }
-
-  private async handleMessageStatusChange(args: Parameters<ClientToServerEvents["message_status"]>[0]) {
-    const { chatId, conversationType, messageId, senderId, status, userId } = args;
-
-    if(conversationType === "group") {
-      if(!this.readCountPerGroup.has(messageId)) {
-        this.readCountPerGroup.set(messageId, new Set());
-      }
-
-      this.readCountPerGroup.get(messageId)?.add(userId);
-      const count = this.readCountPerGroup.get(messageId)!.size;
-
-      try {  
-        const totalMembers = await redis.get(redisKeys.usersPerGroup(chatId)) ?? "2";
-  
-        if(!isNaN(Number(totalMembers)) && count + 1 < Number(totalMembers)) {
-          return;
-        }
-  
-        this.readCountPerGroup.delete(messageId);
-      } catch (error) {
-        console.log(`Failed to get count of the members for group ${chatId}`, error);
-      }
-    }
-
-    this.publishRedisPatterns<"ack:*">(redisPubSubKeys.ackChannel(senderId), {
-      chatId,
-      userId: senderId,
-      messageId,
-      status,
-    });
-  }
-
-  private handleUserTyping = (args: Parameters<ClientToServerEvents["user_typing"]>[0]) => {
-    this.publishRedisPatterns<"user_typing:*">(
-      redisPubSubKeys.userTypingChannel(args.userId),
-      args
-    );
-  };
-
-  async handleJoinGroup(args: Parameters<ClientToServerEvents["join_group"]>[0]) {
-    const { groupIds, userIds } = args;
-    try {
-      for (const userId of userIds) {
-        const sockets = this.userToSockets.get(userId);
+        const sockets = this.connectionManager.getUserSockets(userId);
         if (!sockets) continue;
 
         for (const socketId of sockets) {
-          this.ioInstance.in(socketId).socketsJoin(groupIds);
+          const socket = this.ioInstance.sockets.sockets.get(socketId);
+          if (socket) {
+            socket.emit("presence_updates", presence);
+          } else {
+            this.connectionManager.cleanupSocket(socketId);
+          }
         }
       }
-    } catch (err) {
-      console.error("[Join group error]", err);
+
+    } catch (error) {
+      console.error("[broadcastPresenceUpdate] error:", error);
     }
   }
 
-  async handleLeaveGroup(args: Parameters<ClientToServerEvents["leave_group"]>[0]) {
-    const { groupId, userId } = args;
-    try {
-      const sockets = this.userToSockets.get(userId);
-      if (!sockets) return;
-
-      for (const socketId of sockets) {
-        this.ioInstance.in(socketId).socketsLeave(groupId);
-      }
-    } catch (err) {
-      console.error("[Leave group error]", err);
-    }
-  }
-
-  private handleDisconnect(socket: IOSocket) {
-    const userId = this.socketToUser.get(socket.id);
-    if (!userId) return;
-
-    this.updatePresence({
-      userId,
-      status: "offline",
-      lastSeen: new Date().toISOString(),
-    });
-    this.cleanupSocket(socket.id);
-  }
-
-  private cleanupSocket(socketId: string) {
-    const userId = this.socketToUser.get(socketId);
-    if (!userId) return;
-
-    this.socketToUser.delete(socketId);
-    const userSockets = this.userToSockets.get(userId);
-    if (userSockets) {
-      userSockets.delete(socketId);
-      if (userSockets.size === 0) {
-        this.userToSockets.delete(userId);
-      }
-    }
-  }
-
+  // Public access to IO instance
   public io() {
     return this.ioInstance;
   }
 
-  public cleanup() {
-    this.pub.quit();
-    this.sub.quit();
+  // Graceful shutdown
+  public async cleanup() {
+    console.info('Starting Socket Manager cleanup...');
+    
+    try {
+      // Stop accepting new connections
+      this.ioInstance.close();
 
-    clearInterval(this.batchTimeout);
-    clearInterval(this.presenceUpdateTimeout);
+      // Cleanup components
+      await this.presenceManager.cleanup(),
 
-    this.processBatchUpdates();
-    this.watchPresenceStatus();
+      // Close Redis connections
+      await Promise.all([
+        this.redisPublisher.quit(),
+        this.redisSubscriber.quit(),
+        redis.quit()
+      ]);
 
-    redis.quit();
+      console.info('Socket Manager cleanup completed successfully');
+    } catch (error) {
+      console.error('Error during Socket Manager cleanup:', error);
+      throw error;
+    }
   }
 }
 
-let socketManagerInstance: SocketManager | null;
+// Singleton instance management with proper cleanup
+let socketManagerInstance: SocketManager | null = null;
 
-export default function initializeSocketManager(httpServer: HttpServer) {
+export default function initializeSocketManager(httpServer: HttpServer): SocketManager {
   if (!socketManagerInstance) {
     socketManagerInstance = new SocketManager(httpServer);
+    
+    // Graceful shutdown handling
+    const gracefulShutdown = async (signal: string) => {
+      console.info(`Received ${signal}, initiating graceful shutdown...`);
+      
+      if (socketManagerInstance) {
+        try {
+          await socketManagerInstance.cleanup();
+          socketManagerInstance = null;
+          console.info('Graceful shutdown completed');
+          process.exit(0);
+        } catch (error) {
+          console.error('Error during graceful shutdown:', error);
+          process.exit(1);
+        }
+      }
+    };
+
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    
+    // Handle uncaught exceptions and unhandled rejections
+    process.on('uncaughtException', (error) => {
+      console.error('Uncaught Exception:', error);
+      gracefulShutdown('UNCAUGHT_EXCEPTION');
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+      gracefulShutdown('UNHANDLED_REJECTION');
+    });
   }
+  
   return socketManagerInstance;
 }
 

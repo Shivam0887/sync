@@ -17,7 +17,7 @@ import {
   NotFoundError,
   ConflictError,
 } from "@shared/dist/error-handler/index.js";
-import { IParticipant } from "@/types/socket.types.js";
+import { IParticipant } from "@/types/chat.types.js";
 
 // Fetch all conversations for a user
 export const getConversations = async (
